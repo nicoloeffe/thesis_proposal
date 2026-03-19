@@ -15,7 +15,7 @@ strategy degradation under adversarial perturbations of increasing intensity.
 
 ## Technical Report
 
-→ [technical_report.pdf](./technical_report_thesis.pdf)
+→ [technical_report.pdf](./tecnical_report_thesis.pdf)
 
 ## Contact
 
