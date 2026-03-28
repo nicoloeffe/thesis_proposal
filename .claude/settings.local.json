@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(source /home/nicolo/Deep_Learning/rocm_env/bin/activate)",
-      "Bash(python sanity_check.py)"
-    ]
-  }
-}
