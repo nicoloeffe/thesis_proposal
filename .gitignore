@@ -1,0 +1,4 @@
+dataset_small.npz
+prompt.md
+__pycache__/
+*.pyc
