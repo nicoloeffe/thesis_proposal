@@ -63,6 +63,13 @@ class MarketMakingEnv:
         self._mm_qty = 0.0
 
         self._rebuild_book()
+
+        # Baseline volume per side: used to scale cancellation rate (CST-style).
+        # Cancel rate ~ θ * Q: more volume → more cancellations → natural equilibrium.
+        self._baseline_vol_per_side = max(
+            1.0, 0.5 * (self.book[0, :, 1].sum() + self.book[1, :, 1].sum())
+        )
+
         return self._make_obs()
 
     def step(self, action: Action) -> tuple[Observation, float, bool, dict]:
@@ -116,8 +123,15 @@ class MarketMakingEnv:
 
         n_lo_bid   = self.rng.poisson(self.cfg.lambda_lo_bid)
         n_lo_ask   = self.rng.poisson(self.cfg.lambda_lo_ask)
-        n_can_bid  = self.rng.poisson(self.cfg.lambda_cancel_bid)
-        n_can_ask  = self.rng.poisson(self.cfg.lambda_cancel_ask)
+
+        # Cancellation rate scales with book depth (CST: θ * Q).
+        # When the book is thicker than baseline, more cancellations occur;
+        # when thinner, fewer. This creates a natural depth equilibrium.
+        bid_vol = self.book[0, :, 1].sum()
+        ask_vol = self.book[1, :, 1].sum()
+        base = self._baseline_vol_per_side
+        n_can_bid  = self.rng.poisson(self.cfg.lambda_cancel_bid * max(0.1, bid_vol / base))
+        n_can_ask  = self.rng.poisson(self.cfg.lambda_cancel_ask * max(0.1, ask_vol / base))
 
         # --- 5. Apply events; track MM executions ---
         q_exec_ask = self._apply_mo_buy(n_mo_buy)    # MO buys hit the ask side
@@ -302,8 +316,20 @@ class MarketMakingEnv:
         denom = total_bid_vol + total_ask_vol
         imbalance = (total_bid_vol - total_ask_vol) / denom if denom > 0 else 0.0
 
+        # True best bid/ask: first level with volume > 0.
+        # If a side is empty, fall back to the grid boundary.
         best_bid = self.book[0, 0, 0]
+        for lvl in range(self.cfg.L):
+            if self.book[0, lvl, 1] > 0:
+                best_bid = self.book[0, lvl, 0]
+                break
+
         best_ask = self.book[1, 0, 0]
+        for lvl in range(self.cfg.L):
+            if self.book[1, lvl, 1] > 0:
+                best_ask = self.book[1, lvl, 0]
+                break
+
         spread = best_ask - best_bid
 
         return {

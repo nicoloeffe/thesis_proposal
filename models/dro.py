@@ -46,7 +46,8 @@ class DROConfig:
     # Trust region: max ‖x - y‖ per dimension.
     # Prevents inner solver from reaching OOD regions where the critic
     # extrapolates unreliably. Calibrated on training z std (~1.0 per dim).
-    trust_radius:   float = 3.0      # max per-dim deviation from centroid
+    # Value 0.2 aligned with backward DP training.
+    trust_radius:   float = 0.2      # max per-dim deviation from centroid
 
     # General
     gamma:          float = 0.95     # discount factor for Bellman backup
