@@ -34,7 +34,7 @@ class EncoderConfig:
     d_model:       int   = 64     # transformer internal dimension
     n_heads:       int   = 4      # attention heads
     n_layers:      int   = 2      # transformer encoder layers
-    d_latent:      int   = 32     # latent space dimension
+    d_latent:      int   = 16     # latent space dimension
     dropout:       float = 0.1    # dropout in transformer
     level_weights: tuple = (4.0, 2.0)  # weights for level 0, 1; rest = 1.0
 
@@ -202,14 +202,15 @@ class TemporalPredictor(nn.Module):
 
 class LOBAutoEncoder(nn.Module):
     """
-    Encoder + Decoder for pretraining. Training objective (Proposal C):
+    Encoder + Decoder for pretraining. Training objective:
 
-      L = L_recon_full + λ_temp * L_temporal + λ_decorr * L_decorrelation
+      L = L_recon + λ_temp * L_temporal + λ_decorr * L_decorr + λ_var * L_var
 
-    1. L_recon_full  : MSE on full book (prices + volumes), level-weighted
+    1. L_recon       : MSE on book volumes, level-weighted
     2. L_temporal    : MSE between predicted z_{t+1} and actual encoded z_{t+1}
-    3. L_decorrelation: off-diagonal covariance penalty (VICReg-style)
-                        prevents dimensional collapse
+    3. L_decorrelation: off-diagonal covariance penalty (VICReg covariance)
+    4. L_variance    : max(0, γ - std(z_d)) per dimension (VICReg variance)
+                       prevents dimensional collapse
 
     After training, only the encoder is kept.
     """
@@ -236,21 +237,43 @@ class LOBAutoEncoder(nn.Module):
         self,
         book_pred: torch.Tensor,
         book_true: torch.Tensor,
-        w_price: float = 0.1,
+        w_price: float = 0.0,
         w_vol:   float = 1.0,
     ) -> torch.Tensor:
         """
-        Weighted MSE on full book.
+        Volume-normalised reconstruction loss.
         book_pred/true: (B, 2, L, 2) — last dim is [price_rel, volume]
-        Level weights applied only to volumes (not prices — tick offsets
-        at top-of-book are nearly constant, no need to overweight them).
+
+        w_price=0 by default: relative tick offsets are near-deterministic.
+
+        The volume loss is normalised per-sample by the mean volume of
+        that sample. This prevents the loss from being dominated by
+        thick-book samples (low_vol regime) where absolute errors are
+        large but relative errors are small. Without normalisation,
+        thin-book samples (high_vol) get negligible gradient despite
+        having high relative reconstruction error.
+
+        Per-sample normalisation:
+            loss_i = Σ_{s,l} w_l * (pred - true)² / (mean_vol_i² + ε)
         """
-        sq_err = (book_pred - book_true) ** 2   # (B, 2, L, 2)
-        # Prices: uniform weights across levels
-        loss_price = sq_err[:, :, :, 0].mean()
-        # Volumes: level-weighted (top-of-book more important)
-        loss_vol = (sq_err[:, :, :, 1] * self.level_w.squeeze(-1)).mean()
-        return w_price * loss_price + w_vol * loss_vol
+        # Volume channel: (B, 2, L)
+        vol_pred = book_pred[:, :, :, 1]
+        vol_true = book_true[:, :, :, 1]
+
+        sq_err = (vol_pred - vol_true) ** 2                      # (B, 2, L)
+        weighted_sq_err = sq_err * self.level_w.squeeze(-1)      # (B, 2, L)
+
+        # Per-sample normalisation: divide by mean volume² of that sample
+        # This makes the loss scale-invariant across regimes.
+        sample_vol_sq = (vol_true ** 2).mean(dim=(1, 2), keepdim=True) + 1e-6  # (B, 1, 1)
+        normalised_err = weighted_sq_err / sample_vol_sq                        # (B, 2, L)
+
+        loss_vol = normalised_err.mean()
+
+        if w_price > 0:
+            loss_price = (book_pred[:, :, :, 0] - book_true[:, :, :, 0]).pow(2).mean()
+            return w_price * loss_price + w_vol * loss_vol
+        return w_vol * loss_vol
 
     def _temporal_loss(
         self,
@@ -274,6 +297,23 @@ class LOBAutoEncoder(nn.Module):
         off_diag  = cov[~diag_mask]
         return (off_diag ** 2).mean()
 
+    def _variance_loss(self, z: torch.Tensor, gamma: float = 1.0) -> torch.Tensor:
+        """
+        VICReg variance term: penalizes dimensions with std < gamma.
+
+        L_var = (1/D) Σ_d max(0, γ - std(z_d))
+
+        Prevents dimensional collapse: without this, some z_d can have
+        std → 0, making those dimensions dead. The decorrelation loss
+        alone doesn't prevent this — it only prevents redundancy between
+        *active* dimensions.
+
+        gamma=1.0 is the target std per dimension (after standardization
+        the latent space is well-scaled for downstream modules).
+        """
+        std = z.std(dim=0)  # (D,)
+        return F.relu(gamma - std).mean()
+
     def forward(
         self,
         book: torch.Tensor,
@@ -282,6 +322,7 @@ class LOBAutoEncoder(nn.Module):
         scalars_next: torch.Tensor | None = None,
         lambda_temp:   float = 0.3,
         lambda_decorr: float = 0.05,
+        lambda_var:    float = 0.1,
     ) -> tuple[torch.Tensor, torch.Tensor, dict]:
         """
         Args:
@@ -291,31 +332,37 @@ class LOBAutoEncoder(nn.Module):
             scalars_next : (B, 4)        optional — for temporal loss
             lambda_temp  : weight for temporal loss
             lambda_decorr: weight for decorrelation loss
+            lambda_var   : weight for variance loss (VICReg)
 
         Returns:
             z          : (B, d_latent)
             book_pred  : (B, 2, L, 2)
-            loss_dict  : {"total", "recon", "temporal", "decorr"}
+            loss_dict  : {"total", "recon", "temporal", "decorr", "var"}
         """
         z         = self.encoder(book, scalars)
         book_pred = self.decoder(z)
 
-        loss_recon = self._recon_loss(book_pred, book)
-        loss_temp  = torch.tensor(0.0, device=z.device)
+        loss_recon  = self._recon_loss(book_pred, book)
+        loss_temp   = torch.tensor(0.0, device=z.device)
         loss_decorr = self._decorrelation_loss(z)
+        loss_var    = self._variance_loss(z)
 
         if book_next is not None and scalars_next is not None:
             with torch.no_grad():
                 z_next = self.encoder(book_next, scalars_next)
             loss_temp = self._temporal_loss(z, z_next)
 
-        total = loss_recon + lambda_temp * loss_temp + lambda_decorr * loss_decorr
+        total = (loss_recon
+                 + lambda_temp * loss_temp
+                 + lambda_decorr * loss_decorr
+                 + lambda_var * loss_var)
 
         return z, book_pred, {
-            "total":   total,
-            "recon":   loss_recon,
+            "total":    total,
+            "recon":    loss_recon,
             "temporal": loss_temp,
-            "decorr":  loss_decorr,
+            "decorr":   loss_decorr,
+            "var":      loss_var,
         }
 
     def encode(self, book: torch.Tensor, scalars: torch.Tensor) -> torch.Tensor:
@@ -352,6 +399,7 @@ if __name__ == "__main__":
     print(f"  recon        : {losses['recon'].item():.4f}")
     print(f"  temporal     : {losses['temporal'].item():.4f}")
     print(f"  decorr       : {losses['decorr'].item():.4f}")
+    print(f"  var          : {losses['var'].item():.4f}")
 
     losses["total"].backward()
     print("Backward       : OK")
