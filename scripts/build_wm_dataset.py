@@ -11,7 +11,7 @@ Struttura del dataset salvato (wm_dataset.npz):
   sequences  : (N_seq, N+1, d_latent)   — z_0..z_N per ogni sequenza
   actions    : (N_seq, N, d_action)      — a_0..a_{N-1}
   rewards    : (N_seq, N)                — r_0..r_{N-1}
-  regimes    : (N_seq,)                  — regime della sequenza (0/1/2)
+  regimes    : (N_seq, N)                — per-step regime labels (0/1/2)
   episode_ids: (N_seq,)                  — episodio di origine
 
 Uso:
@@ -55,7 +55,8 @@ def encode_all(
     """
     ds = LOBDataset(dataset_path, stats=stats, load_next=False)
     N  = len(ds)
-    d  = EncoderConfig().d_latent
+    # Infer d_latent from encoder's output projection
+    d  = encoder.latent_proj.bias.shape[0]
     Z  = np.zeros((N, d), dtype=np.float32)
 
     encoder.eval()
@@ -114,14 +115,14 @@ def build_sequences(
         ep_Z   = Z[idx]
         ep_A   = actions[idx]
         ep_R   = rewards[idx]
-        ep_reg = regimes[idx[0]]  # regime is constant per episode
+        ep_reg = regimes[idx]  # per-step regime labels
 
         for start in range(0, len(idx) - seq_len, stride):
             end = start + seq_len + 1  # seq_len+1 latents, seq_len actions/rewards
-            seqs_z.append(ep_Z[start:end])          # (seq_len+1, d_latent)
-            seqs_a.append(ep_A[start:start+seq_len]) # (seq_len, 3)
-            seqs_r.append(ep_R[start:start+seq_len]) # (seq_len,)
-            seqs_reg.append(ep_reg)
+            seqs_z.append(ep_Z[start:end])              # (seq_len+1, d_latent)
+            seqs_a.append(ep_A[start:start+seq_len])    # (seq_len, 3)
+            seqs_r.append(ep_R[start:start+seq_len])    # (seq_len,)
+            seqs_reg.append(ep_reg[start:start+seq_len])# (seq_len,) — per-step!
             seqs_ep.append(ep_id)
 
     print(f"  Total sequences: {len(seqs_z):,}")
@@ -130,7 +131,7 @@ def build_sequences(
         "sequences":   np.array(seqs_z,   dtype=np.float32),  # (N_seq, seq_len+1, d_latent)
         "actions":     np.array(seqs_a,   dtype=np.float32),  # (N_seq, seq_len, 3)
         "rewards":     np.array(seqs_r,   dtype=np.float32),  # (N_seq, seq_len)
-        "regimes":     np.array(seqs_reg, dtype=np.int8),     # (N_seq,)
+        "regimes":     np.array(seqs_reg, dtype=np.int8),     # (N_seq, seq_len) — per-step!
         "episode_ids": np.array(seqs_ep,  dtype=np.int32),    # (N_seq,)
     }
 
@@ -149,11 +150,16 @@ def main(args: argparse.Namespace) -> None:
     # --- Load encoder ---
     ckpt    = torch.load(args.ckpt, map_location=device, weights_only=False)
     cfg_enc = EncoderConfig()
+    if "cfg" in ckpt:
+        for k, v in ckpt["cfg"].items():
+            if hasattr(cfg_enc, k):
+                setattr(cfg_enc, k, v)
     encoder = LOBEncoder(cfg_enc).to(device)
     encoder.load_state_dict(ckpt["encoder"])
     encoder.eval()
     stats = ckpt["stats"]
-    print(f"Encoder loaded (epoch={ckpt['epoch']}, val_loss={ckpt['val_loss']:.6f})")
+    print(f"Encoder loaded (epoch={ckpt['epoch']}, val_loss={ckpt['val_loss']:.6f}, "
+          f"d_latent={cfg_enc.d_latent})")
 
     # --- Check dataset has episode_ids ---
     raw = np.load(args.dataset)
@@ -185,9 +191,16 @@ def main(args: argparse.Namespace) -> None:
     print(f"  sequences shape : {dataset['sequences'].shape}  — (N_seq, {args.seq_len+1}, {d_lat})")
     print(f"  actions shape   : {dataset['actions'].shape}")
     print(f"  rewards shape   : {dataset['rewards'].shape}")
-    counts = np.bincount(dataset["regimes"].astype(int), minlength=3)
+    counts = np.bincount(dataset["regimes"].flatten().astype(int), minlength=3)
+    total_steps = dataset["regimes"].size
     for i, name in enumerate(["low_vol", "mid_vol", "high_vol"]):
-        print(f"  regime {i} ({name:10s}): {counts[i]:7d} sequences ({100*counts[i]/N_seq:.1f}%)")
+        print(f"  regime {i} ({name:10s}): {counts[i]:7d} steps ({100*counts[i]/total_steps:.1f}%)")
+    # Check for mixed sequences (regime changes within a sequence)
+    n_mixed = sum(
+        len(np.unique(dataset["regimes"][j])) > 1
+        for j in range(N_seq)
+    )
+    print(f"  mixed sequences  : {n_mixed:,} / {N_seq:,} ({100*n_mixed/N_seq:.1f}%)")
 
     # --- Shuffle sequences before saving ---
     rng  = np.random.default_rng(42)

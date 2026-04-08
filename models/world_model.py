@@ -28,15 +28,17 @@ import math
 # ---------------------------------------------------------------------------
 
 class WorldModelConfig:
-    d_latent:   int   = 32     # latent dim (must match EncoderConfig.d_latent)
-    d_action:   int   = 3      # action dim (k_bid, k_ask, qty)
-    d_model:    int   = 128    # transformer internal dim
-    n_heads:    int   = 4      # attention heads
-    n_layers:   int   = 4      # transformer layers
-    d_ffn:      int   = 512    # feedforward dim
-    dropout:    float = 0.1    # dropout
-    n_gmm:      int   = 5      # GMM components
-    max_seq:    int   = 200    # max sequence length for positional encoding
+    d_latent:       int   = 24     # latent dim (must match EncoderConfig.d_latent)
+    d_action:       int   = 3      # action dim (k_bid, k_ask, qty)
+    d_model:        int   = 128    # transformer internal dim
+    n_heads:        int   = 4      # attention heads
+    n_layers:       int   = 4      # transformer layers
+    d_ffn:          int   = 512    # feedforward dim
+    dropout:        float = 0.1    # dropout
+    n_gmm:          int   = 5      # GMM components
+    max_seq:        int   = 200    # max sequence length for positional encoding
+    n_regimes:      int   = 3      # regime classes for auxiliary head
+    lambda_regime:  float = 0.1    # weight for regime classification loss
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +154,16 @@ class LOBWorldModel(nn.Module):
         self.norm_out = nn.LayerNorm(C.d_model)
         self.gmm_head = GMMHead(C)
 
+        # Auxiliary regime classification head (per-step).
+        # Forces transformer hidden states to encode regime information,
+        # which propagates to GMM parameters.
+        self.regime_head = nn.Sequential(
+            nn.Linear(C.d_model, 64),
+            nn.GELU(),
+            nn.Dropout(C.dropout),
+            nn.Linear(64, C.n_regimes),
+        )
+
         self._init_weights()
 
     def _init_weights(self) -> None:
@@ -203,6 +215,9 @@ class LOBWorldModel(nn.Module):
 
         x = self.norm_out(x)                              # (B, N, d_model)
 
+        # Store for regime head (used outside forward)
+        self._last_hidden = x
+
         # GMM head
         pi, mu, log_sig = self.gmm_head(x)               # (B,N,K), (B,N,K,D), (B,N,K,D)
 
@@ -244,6 +259,25 @@ class LOBWorldModel(nn.Module):
         log_p = torch.logsumexp(log_comp, dim=-1)
 
         return -log_p.mean()
+
+    def regime_loss(
+        self,
+        regimes: torch.Tensor,   # (B, N) per-step regime labels
+    ) -> tuple[torch.Tensor, float]:
+        """
+        Cross-entropy from auxiliary regime head on hidden states.
+        Returns (loss, accuracy).
+        """
+        h = self._last_hidden                      # (B, N, d_model)
+        logits = self.regime_head(h)               # (B, N, n_regimes)
+        B, N, C = logits.shape
+        loss = F.cross_entropy(
+            logits.reshape(B * N, C),
+            regimes.reshape(B * N).long(),
+        )
+        with torch.no_grad():
+            acc = (logits.argmax(dim=-1) == regimes).float().mean().item()
+        return loss, acc
 
     @torch.no_grad()
     def diagnostics(
@@ -305,25 +339,30 @@ if __name__ == "__main__":
     cfg = WorldModelConfig()
     model = LOBWorldModel(cfg).to(device)
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"World model params: {n_params:,}")
+    print(f"World model params: {n_params:,}  d_latent={cfg.d_latent}")
 
     B, N = 16, 20
     z_seq = torch.randn(B, N + 1, cfg.d_latent).to(device)
     a_seq = torch.randn(B, N, cfg.d_action).to(device)
 
     pi, mu, log_sig = model(z_seq, a_seq)
-    print(f"pi      shape: {pi.shape}       — expected (B, N, K) = ({B}, {N}, {cfg.n_gmm})")
-    print(f"mu      shape: {mu.shape}  — expected (B, N, K, D) = ({B}, {N}, {cfg.n_gmm}, {cfg.d_latent})")
-    print(f"log_sig shape: {log_sig.shape}  — expected (B, N, K, D)")
+    print(f"pi shape: {pi.shape}  — expected ({B}, {N}, {cfg.n_gmm})")
 
-    z_next = z_seq[:, 1:, :]   # targets
+    z_next = z_seq[:, 1:, :]
     loss = model.nll_loss(pi, mu, log_sig, z_next)
     print(f"NLL loss: {loss.item():.4f}")
 
-    loss.backward()
-    print("Backward: OK")
+    # Regime head test (per-step)
+    regimes = torch.randint(0, 3, (B, N)).to(device)
+    reg_loss, reg_acc = model.regime_loss(regimes)
+    print(f"Regime loss: {reg_loss.item():.4f}  acc: {reg_acc:.3f}")
 
-    regimes = torch.randint(0, 3, (B,)).to(device)
-    diag = model.diagnostics(pi, mu, log_sig, z_next, regimes)
+    total = loss + cfg.lambda_regime * reg_loss
+    total.backward()
+    print(f"Backward OK  (total={total.item():.4f})")
+
+    # Diagnostics
+    pi2, mu2, ls2 = model(z_seq, a_seq)
+    diag = model.diagnostics(pi2, mu2, ls2, z_next, regimes)
     print(f"Diagnostics: {diag}")
     print("Tutto OK")
