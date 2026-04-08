@@ -1,8 +1,0 @@
-dataset_small.npz
-prompt.md
-__pycache__/
-*.pyc
-.claude
-data/
-.gitignore
-guide.md
