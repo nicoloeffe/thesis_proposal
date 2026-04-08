@@ -1,21 +1,13 @@
 """
 critic.py — Modulo C (parte 1): Value Network V_θ(z).
 
-Rete neurale che stima il valore atteso cumulato della strategia A-S
-a partire da uno stato latente z:
+Architettura: MLP con Tanh activation (Lipschitz per layer = 1 × σ_max(W)).
+Nessun spectral_norm hard — il bound Lipschitz è soft (gradient penalty nel
+training) e misurato empiricamente. Questo preserva la capacità della rete.
 
-    V_θ(z) ≈ E[ Σ_t γ^t r_t | z_0 = z ]
-
-Addestrata offline con TD learning su traiettorie latenti generate
-dalla policy A-S nel simulatore nominale (wm_dataset.npz).
-
-La differenziabilità di V_θ rispetto a z è il presupposto che permette
-al Modulo C di risolvere l'inner problem del DRO via backpropagation:
-
-    x* = argmin_x { V_θ(x) + λ||x - y||² }
-    ∇_x { V_θ(x) + λ||x-y||² } = ∇_x V_θ(x) + 2λ(x-y)
-
-Reference: Technical Report — Sezione 3, Fase 4.
+Il DRO inner solver richiede che ‖∇_z V‖ sia limitato ma non necessariamente
+≤ 1: basta che sia finito e stimabile, così da calibrare il learning rate
+dell'inner loop. Il bound empirico viene salvato nel checkpoint.
 """
 
 from __future__ import annotations
@@ -24,20 +16,10 @@ import torch
 import torch.nn as nn
 
 
-# ---------------------------------------------------------------------------
-# Value Network
-# ---------------------------------------------------------------------------
-
 class ValueNetwork(nn.Module):
     """
-    MLP che stima V(z) = E[Σ γ^t r_t | z_0 = z].
-
-    Architettura: 3 layer hidden con LayerNorm e GELU.
-    Input: z ∈ R^d_latent
-    Output: scalare V(z)
-
-    Nota: la rete deve essere differenziabile rispetto a z per il DRO.
-    Non usare operazioni non differenziabili (argmax, round, etc.).
+    MLP con Tanh activation, orthogonal init.
+    No LayerNorm, no Dropout, no spectral_norm.
     """
 
     def __init__(
@@ -45,32 +27,26 @@ class ValueNetwork(nn.Module):
         d_latent: int = 32,
         hidden:   int = 256,
         n_layers: int = 3,
-        dropout:  float = 0.1,
     ) -> None:
         super().__init__()
         self.d_latent = d_latent
+        self.n_layers = n_layers
 
         layers = []
         in_dim = d_latent
-        for i in range(n_layers):
-            layers += [
-                nn.Linear(in_dim, hidden),
-                nn.LayerNorm(hidden),
-                nn.GELU(),
-                nn.Dropout(dropout),
-            ]
+        for _ in range(n_layers):
+            linear = nn.Linear(in_dim, hidden)
+            nn.init.orthogonal_(linear.weight, gain=1.0)
+            nn.init.zeros_(linear.bias)
+            layers += [linear, nn.Tanh()]
             in_dim = hidden
-        layers.append(nn.Linear(hidden, 1))
+
+        head = nn.Linear(hidden, 1)
+        nn.init.orthogonal_(head.weight, gain=0.01)
+        nn.init.zeros_(head.bias)
+        layers.append(head)
 
         self.net = nn.Sequential(*layers)
-        self._init_weights()
-
-    def _init_weights(self) -> None:
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.orthogonal_(m.weight, gain=0.01)
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         """
@@ -79,13 +55,39 @@ class ValueNetwork(nn.Module):
         Returns:
             V : (B,) or (B, K)
         """
-        shape = z.shape
         if z.dim() == 3:
-            B, K, D = shape
+            B, K, D = z.shape
             v = self.net(z.reshape(B * K, D))
             return v.reshape(B, K)
-        else:
-            return self.net(z).squeeze(-1)   # (B,)
+        return self.net(z).squeeze(-1)
+
+    @torch.enable_grad()
+    def estimate_lipschitz(self, z_samples: torch.Tensor, n_pairs: int = 5000) -> float:
+        """
+        Stima empirica di L = max ‖∇_z V(z)‖₂ su un campione.
+        Utile per calibrare il DRO inner solver.
+        """
+        was_training = self.training
+        self.eval()
+        z = z_samples[:min(len(z_samples), n_pairs)].detach().clone().requires_grad_(True)
+        v = self.forward(z)
+        grads = torch.autograd.grad(v.sum(), z, create_graph=False)[0]
+        grad_norms = grads.norm(dim=-1)
+        if was_training:
+            self.train()
+        return float(grad_norms.max().item())
+
+    def gradient_penalty(self, z: torch.Tensor) -> torch.Tensor:
+        """
+        Gradient penalty: penalizza ‖∇_z V(z)‖² > target.
+        Chiamato nel training loop.
+        """
+        z_gp = z.detach().requires_grad_(True)
+        v = self.forward(z_gp)
+        grads = torch.autograd.grad(
+            v.sum(), z_gp, create_graph=True
+        )[0]
+        return (grads.norm(dim=-1) ** 2).mean()
 
 
 # ---------------------------------------------------------------------------
@@ -93,30 +95,34 @@ class ValueNetwork(nn.Module):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import sys
-    from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
-    model = ValueNetwork(d_latent=32, hidden=256, n_layers=3).to(device)
+    model = ValueNetwork(d_latent=24, hidden=256, n_layers=3).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"Params: {n_params:,}")
 
-    # Test forward + gradient w.r.t. z (required for DRO inner problem)
-    z = torch.randn(16, 32, device=device, requires_grad=True)
+    z = torch.randn(16, 24, device=device, requires_grad=True)
     v = model(z)
-    print(f"V(z) shape: {v.shape}  — atteso (16,)")
+    print(f"V(z) shape: {v.shape}")
     print(f"V(z) range: [{v.min().item():.4f}, {v.max().item():.4f}]")
 
-    # Gradient w.r.t. z — critical for DRO
     v.sum().backward()
-    print(f"∇_z V shape: {z.grad.shape}  — atteso (16, 32)")
-    print(f"∇_z V norm:  {z.grad.norm().item():.4f}  (must be > 0)")
+    grad_norm = z.grad.norm(dim=-1)
+    print(f"‖∇_z V‖ mean: {grad_norm.mean().item():.4f}  "
+          f"max: {grad_norm.max().item():.4f}")
 
-    # Test with (B, K, D) input
-    z3 = torch.randn(8, 5, 32, device=device)
+    # Gradient penalty
+    gp = model.gradient_penalty(z.detach())
+    print(f"Gradient penalty: {gp.item():.4f}")
+
+    # Empirical Lipschitz
+    z_test = torch.randn(1000, 24, device=device)
+    L = model.estimate_lipschitz(z_test)
+    print(f"Empirical Lipschitz (init): {L:.4f}")
+
+    # 3D input
+    z3 = torch.randn(8, 5, 24, device=device)
     v3 = model(z3)
-    print(f"V(z) 3D shape: {v3.shape}  — atteso (8, 5)")
+    print(f"V(z) 3D shape: {v3.shape}")
     print("OK")
