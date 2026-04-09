@@ -1,24 +1,24 @@
 """
 dro.py — Modulo C: Distributionally Robust Optimization su Wasserstein.
 
-Implementa il duale Wasserstein one-step a tre livelli di ottimizzazione:
+Implementa il duale Wasserstein one-step a tre livelli:
 
-  inf_{Q ∈ U_ε} E_Q[V(z')] = sup_{λ≥0} { -λε + E_{y~P} [ inf_x { V(x) + λ‖x-y‖² } ] }
+  inf_{Q ∈ U_ε} E_Q[V(z')] = sup_{λ≥0} { -λε + E_{y~P} [ inf_x { V(x) + λ c(x,y) } ] }
 
-Fase 1 (middle) — Campionamento punti nominali:
-    y_1..y_m ~ GMM del world model  (oppure centroidi pesati)
+dove c(x,y) è il costo di trasporto (L2 o Mahalanobis).
 
-Fase 2 (inner) — Ottimizzazione avversariale per ogni y_j:
-    x*(y_j, λ) = argmin_x { V(x) + λ‖x - y_j‖² }
-    Risolto con M passi di gradient descent su x.
+Fase 1 — Campionamento nominale:
+    y_1..y_m ~ GMM: per ogni componente k, campiona n_s punti da N(μ_k, σ_k²).
+    Produce K×n_s atomi con pesi π_k/n_s.
 
-Fase 3 (outer) — Aggiornamento di λ:
-    ∇_λ ĝ(λ) = -ε + (1/m) Σ_j ‖x*_j - y_j‖²
-    λ ← max(0, λ + α · ∇_λ ĝ)
+Fase 2 — Inner solver (per ogni y_j):
+    x*(y_j, λ) = argmin_x { V(x) + λ · c(x, y_j) }
+    Con costo Mahalanobis: c(x,y) = Σ_d (x_d - y_d)² / σ²_kd
+    Learning rate adattivo per dimensione: lr_d = min(base_lr, σ²_kd / (2λ))
+    Trust radius in unità di σ: |x_d - y_d| ≤ R · σ_kd
 
-Output: backup robusto one-step e stati avversariali.
-
-Reference: Technical Report — Sezione 3.
+Fase 3 — Bisection su λ:
+    Trova λ* tale che transport(λ*) = ε.
 """
 
 from __future__ import annotations
@@ -35,22 +35,25 @@ import torch.nn as nn
 
 @dataclass
 class DROConfig:
-    # Inner optimization (Phase 2)
-    inner_steps:    int   = 100      # M: gradient steps per centroid
-    inner_lr:       float = 0.05     # η_base: base step size (adapted per λ)
+    # Inner optimization
+    inner_steps:    int   = 100
+    inner_lr:       float = 0.05
 
-    # Outer optimization (Phase 3) — bisection on λ
-    outer_steps:    int   = 30       # bisection iterations
-    lambda_init:    float = 50.0     # upper bound for bisection search
+    # Outer optimization — bisection on λ
+    outer_steps:    int   = 30
+    lambda_init:    float = 50.0
 
-    # Trust region: max ‖x - y‖ per dimension.
-    # Prevents inner solver from reaching OOD regions where the critic
-    # extrapolates unreliably. Calibrated on training z std (~1.0 per dim).
-    # Value 0.2 aligned with backward DP training.
-    trust_radius:   float = 0.2      # max per-dim deviation from centroid
+    # Trust region in units of σ per dimension
+    trust_radius_sigma: float = 3.0
+
+    # Nominal sampling
+    n_samples_per_component: int = 3
+
+    # Cost type
+    cost_type: str = "mahalanobis"   # "mahalanobis" or "l2"
 
     # General
-    gamma:          float = 0.95     # discount factor for Bellman backup
+    gamma: float = 0.95
 
 
 # ---------------------------------------------------------------------------
@@ -59,22 +62,22 @@ class DROConfig:
 
 class InnerSolver:
     """
-    Solves the inner problem for each nominal point y_k:
+    Solves the inner problem for each nominal point y_j:
 
-        x*(y_k, λ) = argmin_x { V(x) + λ‖x - y_k‖² }
+        x*(y_j, λ) = argmin_x { V(x) + λ · c(x, y_j) }
 
-    via gradient descent on x, starting from x = y_k.
+    Cost function:
+      - L2:          c(x,y) = Σ_d (x_d - y_d)²
+      - Mahalanobis: c(x,y) = Σ_d (x_d - y_d)² / σ²_d
 
-    Adaptive learning rate:
-        lr = min(base_lr, 0.5 / (2λ + 1))
-      The inner objective has curvature ≥ 2λ from the quadratic penalty.
-      Optimal GD step for a function with Hessian H is ~1/‖H‖.
-      With 2λI dominating, lr ≈ 1/(2λ) is near-optimal. Cap at base_lr.
+    Adaptive lr (Mahalanobis):
+        Per-dimension lr_d = min(base_lr, σ²_d / (2λ + ε))
+        The Hessian of the penalty along dim d is 2λ/σ²_d, so the
+        optimal GD step is σ²_d/(2λ). Capped at base_lr.
 
     Trust region:
-        After each step, clip |x_d - y_d| ≤ R per dimension.
-        Prevents the critic from being evaluated in OOD regions where
-        it extrapolates unreliably (arbitrary negative values).
+        |x_d - y_d| ≤ R · σ_d   (Mahalanobis)
+        |x_d - y_d| ≤ R          (L2)
     """
 
     def __init__(self, critic: nn.Module, cfg: DROConfig) -> None:
@@ -83,31 +86,52 @@ class InnerSolver:
 
     def solve(
         self,
-        y: torch.Tensor,          # (K, D) — nominal centroids
-        lam: float,               # current λ
+        y: torch.Tensor,          # (m, D) — nominal points
+        lam: float,
+        sigma: torch.Tensor,      # (m, D) — per-point σ (from GMM component)
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        R = self.cfg.trust_radius
+        C = self.cfg
+        R = C.trust_radius_sigma
+        mahal = (C.cost_type == "mahalanobis")
 
-        # Adaptive lr: scale with curvature of the quadratic penalty
-        lr = min(self.cfg.inner_lr, 0.5 / (2.0 * lam + 1.0))
+        # Precompute inverse variance and trust bounds
+        if mahal:
+            sig2 = sigma ** 2 + 1e-8                    # (m, D)
+            inv_sig2 = 1.0 / sig2                       # (m, D)
+            # Per-dim adaptive lr: σ²_d / (2λ + 1)
+            lr_per_dim = torch.clamp(sig2 / (2.0 * lam + 1.0), max=C.inner_lr)  # (m, D)
+            trust_bound = R * sigma                     # (m, D)
+        else:
+            inv_sig2 = None
+            lr_scalar = min(C.inner_lr, 0.5 / (2.0 * lam + 1.0))
+            lr_per_dim = None
+            trust_bound = R  # scalar
 
         x = y.clone().detach().requires_grad_(True)
         y_det = y.detach()
 
-        for step in range(self.cfg.inner_steps):
-            v = self.critic(x)                                    # (K,)
-            penalty = lam * ((x - y_det) ** 2).sum(dim=-1)       # (K,)
+        for step in range(C.inner_steps):
+            v = self.critic(x)                          # (m,)
+
+            if mahal:
+                penalty = lam * (((x - y_det) ** 2) * inv_sig2).sum(dim=-1)  # (m,)
+            else:
+                penalty = lam * ((x - y_det) ** 2).sum(dim=-1)               # (m,)
+
             obj = v + penalty
 
             grad = torch.autograd.grad(
                 obj.sum(), x, create_graph=False
-            )[0]                                                  # (K, D)
+            )[0]                                        # (m, D)
 
-            # Gradient descent step
-            x_new = x - lr * grad
+            # Gradient descent with adaptive lr
+            if mahal:
+                x_new = x - lr_per_dim * grad
+            else:
+                x_new = x - lr_scalar * grad
 
-            # Trust region: clip per-dimension deviation from y
-            x_new = torch.clamp(x_new, y_det - R, y_det + R)
+            # Trust region clamp
+            x_new = torch.clamp(x_new, y_det - trust_bound, y_det + trust_bound)
 
             x = x_new.detach().requires_grad_(True)
 
@@ -118,22 +142,17 @@ class InnerSolver:
 
 
 # ---------------------------------------------------------------------------
-# DRO Module (full three-level optimization)
+# DRO Module
 # ---------------------------------------------------------------------------
 
 class WassersteinDRO:
     """
-    Distributionally Robust Optimization module.
+    Full three-level Wasserstein DRO.
 
-    Given:
-      - World model GMM parameters (π, μ, log_σ) at a single timestep
-      - Critic V_θ(z)
-      - Ambiguity set radius ε
-
-    Computes:
-      - Adversarial next states x*
-      - Robust Bellman backup: y_rob = r + γ * V(x*_worst)
-      - Dual function value ĝ(λ*)
+    Given GMM parameters (π, μ, log_σ), critic V_θ, and radius ε:
+      1. Sample nominal points from GMM
+      2. For each point, solve inner problem
+      3. Bisect on λ to satisfy transport = ε
     """
 
     def __init__(
@@ -150,55 +169,92 @@ class WassersteinDRO:
         pi: torch.Tensor,        # (K,)
         mu: torch.Tensor,        # (K, D)
         log_sig: torch.Tensor,   # (K, D)
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+        seed: int = 0,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        Phase 1: Get nominal points and their weights.
+        Sample n_s points per component from the GMM.
 
-        Uses GMM centroids μ_k with weights π_k.
-        Deterministic, zero MC variance, and sufficient for K=5 in d=32
-        because the GMM components already capture the distribution structure.
+        Uses a fixed seed so that the same GMM parameters always produce
+        the same nominal points — critical for consistent V_nom across ε.
 
         Returns:
-            y       : (K, D) — centroid positions
-            weights : (K,)   — mixture weights π_k (sum to 1)
+            y       : (K*n_s, D)  — sampled points
+            weights : (K*n_s,)    — weights π_k/n_s per point
+            sigma   : (K*n_s, D)  — σ of the parent component (for Mahalanobis)
         """
-        return mu.clone(), pi.clone()
+        K, D = mu.shape
+        n_s = self.cfg.n_samples_per_component
+        sig = torch.exp(log_sig)  # (K, D)
+
+        if n_s == 0:
+            # Deterministic: use centroids only
+            return mu.clone(), pi.clone(), sig.clone()
+
+        # Fixed seed for reproducibility across ε values
+        gen = torch.Generator(device=mu.device).manual_seed(seed)
+
+        # Sample from each component
+        # y_kj = μ_k + σ_k * ε_kj,  ε_kj ~ N(0, I)
+        eps = torch.randn(K, n_s, D, device=mu.device, generator=gen)  # (K, n_s, D)
+        y = mu.unsqueeze(1) + sig.unsqueeze(1) * eps             # (K, n_s, D)
+        y = y.reshape(K * n_s, D)
+
+        # Weights: π_k / n_s for each sample from component k
+        weights = (pi / n_s).unsqueeze(1).expand(K, n_s).reshape(K * n_s)
+
+        # Each sample inherits σ from its parent component
+        sigma = sig.unsqueeze(1).expand(K, n_s, D).reshape(K * n_s, D)
+
+        return y, weights, sigma
+
+    def _compute_transport(
+        self,
+        y: torch.Tensor,          # (m, D)
+        weights: torch.Tensor,    # (m,)
+        sigma: torch.Tensor,      # (m, D)
+        lam: float,
+    ) -> tuple[float, torch.Tensor, torch.Tensor]:
+        """Solve inner problem at given λ, return weighted transport."""
+        x_star, v_star = self.inner_solver.solve(y, lam, sigma)
+
+        if self.cfg.cost_type == "mahalanobis":
+            sig2 = sigma ** 2 + 1e-8
+            transport_per_point = (((x_star - y) ** 2) / sig2).sum(dim=-1)  # (m,)
+        else:
+            transport_per_point = ((x_star - y) ** 2).sum(dim=-1)           # (m,)
+
+        w_transport = (weights * transport_per_point).sum().item()
+        return w_transport, x_star, v_star
 
     def solve_one_step(
         self,
         pi: torch.Tensor,        # (K,)
         mu: torch.Tensor,        # (K, D)
         log_sig: torch.Tensor,   # (K, D)
-        epsilon: float,           # Wasserstein radius
+        epsilon: float,
     ) -> dict:
         """
         Full three-level optimization for a single transition.
 
-        The dual says:
-          inf_Q E_Q[V] = sup_λ { -λε + Σ_k π_k * inf_x { V(x) + λ‖x-μ_k‖² } }
-
-        Outer loop: BISECTION on λ.
-        At the optimum, complementary slackness gives:
-            transport(λ*) = ε
-        transport(λ) is monotonically decreasing in λ (higher penalty → less movement),
-        so bisection finds λ* in O(log₂(range/tol)) steps. No learning rate to tune.
-
-        Special case ε=0: λ→∞, x*=y, return nominal value directly.
+        Bisection on λ: transport(λ) is monotonically decreasing in λ,
+        so we find λ* such that transport(λ*) = ε.
         """
         C = self.cfg
 
-        # Phase 1: get centroids and weights
-        y, weights = self._sample_nominal(pi, mu, log_sig)  # (K, D), (K,)
+        # Phase 1: sample nominal points
+        y, weights, sigma = self._sample_nominal(pi, mu, log_sig)
 
-        # Nominal expected value: Σ π_k V(μ_k)
+        # Nominal expected value
         with torch.no_grad():
             v_nominal = (weights * self.critic(y)).sum().item()
 
-        # Special case: ε = 0 → no perturbation allowed
+        # Special case: ε = 0
         if epsilon <= 1e-10:
+            with torch.no_grad():
+                v_star = self.critic(y)
             return {
                 "x_star":       y.clone(),
-                "v_star":       self.critic(y).detach(),
+                "v_star":       v_star,
                 "v_robust":     v_nominal,
                 "v_nominal":    v_nominal,
                 "lambda_star":  float("inf"),
@@ -206,32 +262,25 @@ class WassersteinDRO:
                 "transport":    0.0,
             }
 
-        # Helper: solve inner problem for a given λ and return weighted transport
-        def compute_transport(lam: float) -> tuple[float, torch.Tensor, torch.Tensor]:
-            x_star, v_star = self.inner_solver.solve(y, lam)
-            transport = ((x_star - y) ** 2).sum(dim=-1)       # (K,)
-            w_transport = (weights * transport).sum().item()   # scalar
-            return w_transport, x_star, v_star
-
-        # Bisection: find λ* such that transport(λ*) = ε
-        # λ_low → large transport (small penalty), λ_high → small transport
+        # Phase 3: bisection on λ
         lam_low  = 1e-4
-        lam_high = C.lambda_init   # start with configured upper bound
+        lam_high = C.lambda_init
 
-        # Expand upper bound if needed (transport at lam_high should be < ε)
-        t_high, _, _ = compute_transport(lam_high)
+        # Expand upper bound if needed
+        t_high, _, _ = self._compute_transport(y, weights, sigma, lam_high)
         while t_high > epsilon and lam_high < 1e6:
             lam_high *= 2
-            t_high, _, _ = compute_transport(lam_high)
+            t_high, _, _ = self._compute_transport(y, weights, sigma, lam_high)
 
-        # Expand lower bound if needed (transport at lam_low should be > ε)
-        t_low, _, _ = compute_transport(lam_low)
+        # Expand lower bound if needed
+        t_low, _, _ = self._compute_transport(y, weights, sigma, lam_low)
         if t_low < epsilon:
-            # Even with minimal penalty, transport < ε
-            # This means the adversary can't use all the budget — V is too flat
-            # Return the result at lam_low (maximum perturbation we can achieve)
-            x_star, v_star = self.inner_solver.solve(y, lam_low)
-            transport_k = ((x_star - y) ** 2).sum(dim=-1)
+            # Adversary can't use full budget — V too flat locally
+            x_star, v_star = self.inner_solver.solve(y, lam_low, sigma)
+            if self.cfg.cost_type == "mahalanobis":
+                transport_k = (((x_star - y) ** 2) / (sigma ** 2 + 1e-8)).sum(dim=-1)
+            else:
+                transport_k = ((x_star - y) ** 2).sum(dim=-1)
             w_transport = (weights * transport_k).sum().item()
             v_robust = (weights * v_star).sum().item()
             dual_value = -lam_low * epsilon + (weights * (v_star + lam_low * transport_k)).sum().item()
@@ -246,24 +295,25 @@ class WassersteinDRO:
             }
 
         # Bisection loop
-        best_result = None
         for step in range(C.outer_steps):
             lam_mid = (lam_low + lam_high) / 2
-            t_mid, x_star, v_star = compute_transport(lam_mid)
+            t_mid, _, _ = self._compute_transport(y, weights, sigma, lam_mid)
 
             if t_mid > epsilon:
-                lam_low = lam_mid    # transport too large → increase λ
+                lam_low = lam_mid
             else:
-                lam_high = lam_mid   # transport too small → decrease λ
+                lam_high = lam_mid
 
-            # Check convergence
             if abs(t_mid - epsilon) / (epsilon + 1e-8) < 0.01:
                 break
 
-        # Final solve at converged λ
+        # Final solve at converged λ*
         lam_star = (lam_low + lam_high) / 2
-        x_star, v_star = self.inner_solver.solve(y, lam_star)
-        transport_k = ((x_star - y) ** 2).sum(dim=-1)
+        x_star, v_star = self.inner_solver.solve(y, lam_star, sigma)
+        if self.cfg.cost_type == "mahalanobis":
+            transport_k = (((x_star - y) ** 2) / (sigma ** 2 + 1e-8)).sum(dim=-1)
+        else:
+            transport_k = ((x_star - y) ** 2).sum(dim=-1)
         w_transport = (weights * transport_k).sum().item()
         v_robust = (weights * v_star).sum().item()
         dual_value = -lam_star * epsilon + (weights * (v_star + lam_star * transport_k)).sum().item()
@@ -287,14 +337,8 @@ class WassersteinDRO:
         epsilon: float,
     ) -> dict:
         """
-        Compute the robust Bellman backup for a single transition:
-
-            y_rob = r + γ * Σ_k π_k V(x*_k)
-
-        where x*_k are the adversarial states obtained from the dual.
-        The robust E[V] is the weighted mean, as per the duality derivation.
-
-        Returns dict with y_rob plus all DRO diagnostics.
+        Robust Bellman backup:
+            y_rob = r + γ · E_Q*[V(x*)]
         """
         result = self.solve_one_step(pi, mu, log_sig, epsilon)
         y_rob  = reward + self.cfg.gamma * result["v_robust"]
@@ -310,12 +354,7 @@ class WassersteinDRO:
 
 class StressTestRunner:
     """
-    Runs DRO stress testing over a set of trajectories for multiple ε values.
-
-    For each trajectory and each timestep t:
-      1. Get GMM from world model at position t
-      2. Run DRO to get robust backup
-      3. Accumulate V_rob(ε) = E_τ [ Σ_t γ^t y_rob_t(ε) ]
+    Runs DRO stress testing over trajectories for multiple ε values.
     """
 
     def __init__(
@@ -334,46 +373,29 @@ class StressTestRunner:
         self,
         z_seq: torch.Tensor,    # (1, N+1, D)
         a_seq: torch.Tensor,    # (1, N, 3)
-        t: int,                  # position in sequence
+        t: int,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Get GMM parameters at position t from the world model.
-        Returns: pi (K,), mu (K,D), log_sig (K,D)
-        """
         pi, mu, log_sig = self.world_model(z_seq, a_seq)
-        # Extract position t: (1, K) -> (K,), (1, K, D) -> (K, D)
-        return (
-            pi[0, t, :],
-            mu[0, t, :, :],
-            log_sig[0, t, :, :],
-        )
+        return pi[0, t, :], mu[0, t, :, :], log_sig[0, t, :, :]
 
     def run_trajectory(
         self,
-        z_seq: torch.Tensor,     # (1, N+1, D)
-        a_seq: torch.Tensor,     # (1, N, 3)
-        rewards: torch.Tensor,   # (1, N)
+        z_seq: torch.Tensor,
+        a_seq: torch.Tensor,
+        rewards: torch.Tensor,
         epsilon: float,
     ) -> dict:
-        """
-        Run DRO on every timestep of a single trajectory.
-        Returns per-step results and trajectory-level V_rob.
-        """
         N = a_seq.shape[1]
         gamma = self.cfg.gamma
 
-        y_rob_list = []
-        y_nom_list = []
-        v_robust_list = []
-        v_nominal_list = []
-        lambda_list = []
-        transport_list = []
+        y_rob_list, y_nom_list = [], []
+        v_robust_list, v_nominal_list = [], []
+        lambda_list, transport_list = [], []
 
         for t in range(N):
             pi, mu, log_sig = self._get_gmm_at_t(z_seq, a_seq, t)
             r_t = rewards[0, t].item()
 
-            # Need gradients for inner optimization
             with torch.enable_grad():
                 result = self.dro.robust_bellman_backup(
                     r_t, pi, mu, log_sig, epsilon
@@ -386,62 +408,42 @@ class StressTestRunner:
             lambda_list.append(result["lambda_star"])
             transport_list.append(result["transport"])
 
-        # Discounted sums
         v_rob = sum(gamma ** t * y_rob_list[t] for t in range(N))
         v_nom = sum(gamma ** t * y_nom_list[t] for t in range(N))
 
         return {
-            "v_rob":        v_rob,
-            "v_nominal":    v_nom,
-            "y_rob":        y_rob_list,
-            "y_nominal":    y_nom_list,
-            "v_robust":     v_robust_list,
-            "v_nominal_st": v_nominal_list,
-            "lambdas":      lambda_list,
-            "transports":   transport_list,
+            "v_rob": v_rob, "v_nominal": v_nom,
+            "y_rob": y_rob_list, "y_nominal": y_nom_list,
+            "v_robust": v_robust_list, "v_nominal_st": v_nominal_list,
+            "lambdas": lambda_list, "transports": transport_list,
         }
 
     def run_stress_test(
         self,
-        sequences: torch.Tensor,    # (M, N+1, D)
-        actions: torch.Tensor,      # (M, N, 3)
-        rewards: torch.Tensor,      # (M, N)
+        sequences: torch.Tensor,
+        actions: torch.Tensor,
+        rewards: torch.Tensor,
         epsilons: list[float],
         n_trajectories: int = 50,
         seed: int = 42,
         verbose: bool = True,
     ) -> dict:
-        """
-        Run the full stress test: compute V_rob(ε) for each ε.
-
-        Returns:
-            results[ε] = {
-                "v_rob_mean", "v_rob_std",
-                "v_nominal_mean",
-                "degradation",            # (v_nom - v_rob) / |v_nom|
-                "mean_lambda", "mean_transport",
-                "per_traj_v_rob",
-            }
-        """
         M = sequences.shape[0]
         rng = torch.Generator().manual_seed(seed)
         idx = torch.randperm(M, generator=rng)[:n_trajectories]
 
         results = {}
-
         for eps in epsilons:
             if verbose:
                 print(f"\n  ε = {eps:.4f}  ", end="", flush=True)
 
-            traj_v_rob = []
-            traj_v_nom = []
-            traj_lambdas = []
-            traj_transports = []
+            traj_v_rob, traj_v_nom = [], []
+            traj_lambdas, traj_transports = [], []
 
             for i, traj_idx in enumerate(idx):
-                z_seq = sequences[traj_idx:traj_idx+1]    # (1, N+1, D)
-                a_seq = actions[traj_idx:traj_idx+1]      # (1, N, 3)
-                rew   = rewards[traj_idx:traj_idx+1]      # (1, N)
+                z_seq = sequences[traj_idx:traj_idx+1]
+                a_seq = actions[traj_idx:traj_idx+1]
+                rew   = rewards[traj_idx:traj_idx+1]
 
                 res = self.run_trajectory(z_seq, a_seq, rew, epsilon=eps)
                 traj_v_rob.append(res["v_rob"])
@@ -454,7 +456,6 @@ class StressTestRunner:
 
             v_rob_arr = torch.tensor(traj_v_rob)
             v_nom_arr = torch.tensor(traj_v_nom)
-
             v_rob_mean = v_rob_arr.mean().item()
             v_nom_mean = v_nom_arr.mean().item()
             degradation = (v_nom_mean - v_rob_mean) / (abs(v_nom_mean) + 1e-8)
@@ -481,30 +482,43 @@ class StressTestRunner:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
-    # Dummy critic
     from models.critic import ValueNetwork
-    critic = ValueNetwork(d_latent=32).to(device)
+    critic = ValueNetwork(d_latent=24).to(device)
     critic.eval()
 
-    cfg = DROConfig(inner_steps=10, outer_steps=5)
-    dro = WassersteinDRO(critic, cfg)
-
-    # Dummy GMM params
-    K, D = 5, 32
+    K, D = 5, 24
     pi      = torch.softmax(torch.randn(K), dim=0).to(device)
-    mu      = torch.randn(K, D).to(device) * 0.1
-    log_sig = torch.full((K, D), -2.0).to(device)
+    mu      = torch.randn(K, D).to(device) * 0.5
+    log_sig = torch.full((K, D), -1.0).to(device)  # σ ≈ 0.37
 
-    result = dro.robust_bellman_backup(
-        reward=0.01, pi=pi, mu=mu, log_sig=log_sig, epsilon=0.1
-    )
-    print(f"y_rob     : {result['y_rob']:.6f}")
-    print(f"y_nominal : {result['y_nominal']:.6f}")
-    print(f"v_robust  : {result['v_robust']:.6f}")
-    print(f"v_nominal : {result['v_nominal']:.6f}")
-    print(f"λ*        : {result['lambda_star']:.4f}")
-    print(f"transport : {result['transport']:.6f}")
-    print("OK")
+    print("\n--- Test Mahalanobis ---")
+    cfg_m = DROConfig(inner_steps=50, outer_steps=20, cost_type="mahalanobis",
+                      n_samples_per_component=3, trust_radius_sigma=3.0)
+    dro_m = WassersteinDRO(critic, cfg_m)
+    res_m = dro_m.robust_bellman_backup(0.01, pi, mu, log_sig, epsilon=0.1)
+    print(f"  y_rob={res_m['y_rob']:.6f}  y_nom={res_m['y_nominal']:.6f}")
+    print(f"  λ*={res_m['lambda_star']:.4f}  transport={res_m['transport']:.6f}")
+    print(f"  n_atoms={res_m['x_star'].shape[0]}  (K={K} × n_s={cfg_m.n_samples_per_component})")
+
+    print("\n--- Test L2 ---")
+    cfg_l = DROConfig(inner_steps=50, outer_steps=20, cost_type="l2",
+                      n_samples_per_component=0, trust_radius_sigma=0.5)
+    dro_l = WassersteinDRO(critic, cfg_l)
+    res_l = dro_l.robust_bellman_backup(0.01, pi, mu, log_sig, epsilon=0.1)
+    print(f"  y_rob={res_l['y_rob']:.6f}  y_nom={res_l['y_nominal']:.6f}")
+    print(f"  λ*={res_l['lambda_star']:.4f}  transport={res_l['transport']:.6f}")
+    print(f"  n_atoms={res_l['x_star'].shape[0]}  (centroids only)")
+
+    print("\n--- Test ε=0 ---")
+    res_0 = dro_m.robust_bellman_backup(0.01, pi, mu, log_sig, epsilon=0.0)
+    print(f"  y_rob={res_0['y_rob']:.6f}  y_nom={res_0['y_nominal']:.6f}")
+    assert abs(res_0['y_rob'] - res_0['y_nominal']) < 1e-6, "ε=0 should give nominal"
+
+    print("\nOK")
