@@ -355,7 +355,7 @@ def train(args: argparse.Namespace) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train LOB Autoencoder")
     parser.add_argument("--dataset",       type=str,   default="data/dataset.npz")
-    parser.add_argument("--epochs",        type=int,   default=50)
+    parser.add_argument("--epochs",        type=int,   default=100)
     parser.add_argument("--batch_size",    type=int,   default=512)
     parser.add_argument("--lr",            type=float, default=3e-4)
     parser.add_argument("--grad_clip",     type=float, default=1.0)

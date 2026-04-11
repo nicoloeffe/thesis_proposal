@@ -113,7 +113,9 @@ class MarketMakingEnv:
         n_mo_buy  = self.rng.poisson(self.cfg.lambda_mo_buy)
         n_mo_sell = self.rng.poisson(self.cfg.lambda_mo_sell)
 
-        n_informed = self.rng.poisson(self.cfg.lambda_mo_buy * self.cfg.p_informed)
+        n_informed = self.rng.poisson(
+            0.5 * (self.cfg.lambda_mo_buy + self.cfg.lambda_mo_sell) * self.cfg.p_informed
+        )
         if shock > 0:
             # price went up → informed sellers hit bid (MM buys at a soon-to-be-bad price)
             n_mo_sell += n_informed
@@ -220,15 +222,17 @@ class MarketMakingEnv:
     def _add_volume_at_price(self, side: int, price: float, volume: float) -> None:
         """
         Find the level whose price matches `price` and add `volume`.
-        If the price is outside the tracked L levels, the quote is ignored
-        (it would be too deep to affect execution in this simplified model).
+        If the price is outside the tracked L levels, snap to the closest
+        boundary level instead of silently discarding.
         """
         for lvl in range(self.cfg.L):
             if abs(self.book[side, lvl, 0] - price) < 1e-9:
                 self.book[side, lvl, 1] += volume
                 return
-        # Price not in the current grid — insert at the closest boundary level
-        # (simplified: we skip since MO sweep handles best-level only)
+        # Price not in the current grid — snap to nearest level
+        distances = np.abs(self.book[side, :, 0] - price)
+        nearest = int(np.argmin(distances))
+        self.book[side, nearest, 1] += volume
 
     def _apply_mo_buy(self, n: int) -> float:
         """

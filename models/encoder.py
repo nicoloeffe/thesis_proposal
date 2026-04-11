@@ -31,9 +31,9 @@ from torch.nn.utils.parametrizations import spectral_norm
 
 class EncoderConfig:
     L:             int   = 10     # book depth (levels per side)
-    d_model:       int   = 64     # transformer internal dimension
+    d_model:       int   = 128     # transformer internal dimension
     n_heads:       int   = 4      # attention heads
-    n_layers:      int   = 2      # transformer encoder layers
+    n_layers:      int   = 4      # transformer encoder layers
     d_latent:      int   = 16     # latent space dimension
     dropout:       float = 0.1    # dropout in transformer
     level_weights: tuple = (4.0, 2.0)  # weights for level 0, 1; rest = 1.0

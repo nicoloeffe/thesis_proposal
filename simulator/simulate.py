@@ -133,6 +133,13 @@ def apply_regime_to_env(env: MarketMakingEnv, regime_idx: int) -> None:
     env.cfg.lambda_cancel_ask = regime["lambda_cancel_ask"]
     env.cfg.as_gamma        = regime["as_gamma"]
 
+    # Recalculate baseline volume — cancellation rate (CST logic) uses this.
+    # Without this, the old baseline from reset() persists after regime switch,
+    # causing cancellation rates to be miscalibrated.
+    env._baseline_vol_per_side = max(
+        1.0, 0.5 * (env.book[0, :, 1].sum() + env.book[1, :, 1].sum())
+    )
+
 
 # ---------------------------------------------------------------------------
 # Random policy
