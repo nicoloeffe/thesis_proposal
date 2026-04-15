@@ -1,18 +1,31 @@
 """
-encoder.py — Modulo A: Encoder Transformer del Limit Order Book.
+encoder.py — Modulo A: Encoder Transformer del Limit Order Book (v3).
 
 Architettura:
   - Input    : book (2, L, 2) → 2L token, ciascuno con 2 feature (price, volume)
   - Embedding: proiezione lineare 2 → d_model con spectral norm
   - Pos enc  : embedding appreso per (side × level), shape (2*L, d_model)
   - Encoder  : N layer Transformer Encoder con multi-head self-attention (pre-norm)
-  - Pooling  : mean pooling sull'output + concat scalari (mid, spread, imbalance, inv)
+  - Pooling  : mean pooling sull'output
   - Latente  : proiezione lineare → z ∈ R^d_latent con spectral norm
 
+Note architetturali (v3):
+  - Nessun scalare in input: z codifica tutta la microstruttura dal book.
+  - Testa ausiliaria BookStatsPredictor: predice statistiche aggregate
+    (volume medio, concentrazione al best) da z. Questa testa risolve
+    il problema della normalizzazione per-sample nella recon loss,
+    che elimina il segnale di scala assoluta — il principale discriminante
+    tra regimi. La testa viene scartata dopo il training.
+
 Training (autoencoder):
-  - Decoder MLP ausiliario che ricostruisce i volumi del book da z
-  - Loss di ricostruzione pesata (livelli vicini al best hanno peso maggiore)
-  - Al termine del training il decoder viene scartato e l'encoder congelato
+  L = L_recon + λ_stats * L_stats + λ_temp * L_temporal
+      + λ_decorr * L_decorr + λ_var * L_var
+
+  1. L_recon   : MSE volumi, level-weighted, per-sample normalised (shape)
+  2. L_stats   : MSE su aggregate book statistics (preserva scala assoluta)
+  3. L_temporal: z_t → z_{t+1} predictor (smoothness)
+  4. L_decorr  : VICReg off-diagonal covariance
+  5. L_var     : VICReg variance term
 
 Reference: Technical Report — Modulo A, Sezione 1.
 """
@@ -31,10 +44,10 @@ from torch.nn.utils.parametrizations import spectral_norm
 
 class EncoderConfig:
     L:             int   = 10     # book depth (levels per side)
-    d_model:       int   = 128     # transformer internal dimension
+    d_model:       int   = 128    # transformer internal dimension
     n_heads:       int   = 4      # attention heads
     n_layers:      int   = 4      # transformer encoder layers
-    d_latent:      int   = 16     # latent space dimension
+    d_latent:      int   = 24     # latent space dimension (was 16 in v2)
     dropout:       float = 0.1    # dropout in transformer
     level_weights: tuple = (4.0, 2.0)  # weights for level 0, 1; rest = 1.0
 
@@ -48,8 +61,7 @@ class LOBEncoder(nn.Module):
     Transformer encoder for Limit Order Book snapshots.
 
     Input:
-        book    : (B, 2, L, 2)  — bid/ask sides, L levels, [price, volume]
-        scalars : (B, 4)        — [mid, spread, imbalance, inventory]
+        book : (B, 2, L, 2) — bid/ask sides, L levels, [price_rel, volume_norm]
 
     Output:
         z : (B, d_latent)
@@ -79,45 +91,27 @@ class LOBEncoder(nn.Module):
         )
         self.transformer = nn.TransformerEncoder(enc_layer, num_layers=C.n_layers)
 
-        # --- Latent projection: pooled + scalars → z (spectral norm) ---
-        self.latent_proj = spectral_norm(nn.Linear(C.d_model + 4, C.d_latent))
+        # --- Latent projection: pooled → z (spectral norm) ---
+        self.latent_proj = spectral_norm(nn.Linear(C.d_model, C.d_latent))
 
         self._init_weights()
 
     def _init_weights(self) -> None:
-        # spectral_norm from parametrizations wraps weight as a parametrization
-        # access original weight via .parametrizations.weight.original
         nn.init.xavier_uniform_(self.token_embed.parametrizations.weight.original)
         nn.init.zeros_(self.token_embed.bias)
         nn.init.normal_(self.pos_embed.weight, std=0.02)
         nn.init.xavier_uniform_(self.latent_proj.parametrizations.weight.original)
         nn.init.zeros_(self.latent_proj.bias)
 
-    def forward(self, book: torch.Tensor, scalars: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            book    : (B, 2, L, 2)
-            scalars : (B, 4)
-
-        Returns:
-            z : (B, d_latent)
-        """
+    def forward(self, book: torch.Tensor) -> torch.Tensor:
         B, sides, L, feat = book.shape
-
-        # Flatten to token sequence: (B, 2*L, 2)
         tokens = book.reshape(B, 2 * L, 2)
-
-        # Token embedding + positional encoding
-        x = self.token_embed(tokens)                              # (B, T, d_model)
+        x = self.token_embed(tokens)
         pos_ids = torch.arange(2 * L, device=book.device)
-        x = x + self.pos_embed(pos_ids)                          # broadcast over batch
-
-        # Transformer self-attention
-        x = self.transformer(x)                                   # (B, T, d_model)
-
-        # Mean pooling + concat scalars → latent
-        pooled = x.mean(dim=1)                                    # (B, d_model)
-        z = self.latent_proj(torch.cat([pooled, scalars], dim=-1))  # (B, d_latent)
+        x = x + self.pos_embed(pos_ids)
+        x = self.transformer(x)
+        pooled = x.mean(dim=1)
+        z = self.latent_proj(pooled)
         return z
 
 
@@ -127,18 +121,14 @@ class LOBEncoder(nn.Module):
 
 class LOBDecoder(nn.Module):
     """
-    MLP decoder: reconstructs full book snapshot (prices + volumes) from z.
-    Output: (B, 2, L, 2) — same shape as input book.
-
-    Prices are relative offsets in ticks (can be negative), volumes are ≥ 0.
-    Two separate output heads to apply appropriate activations.
+    MLP decoder: reconstructs book from z.
+    Output: (B, 2, L, 2) — [price_rel, volume].
     """
 
     def __init__(self, cfg: EncoderConfig | None = None) -> None:
         super().__init__()
         self.cfg = cfg or EncoderConfig()
         C = self.cfg
-
         hidden = C.d_model * 2
 
         self.trunk = nn.Sequential(
@@ -149,38 +139,27 @@ class LOBDecoder(nn.Module):
             nn.LayerNorm(hidden),
             nn.GELU(),
         )
-        # Price head: relative tick offsets, unbounded
         self.price_head = nn.Linear(hidden, 2 * C.L)
-        # Volume head: non-negative
-        self.vol_head   = nn.Sequential(
+        self.vol_head = nn.Sequential(
             nn.Linear(hidden, 2 * C.L),
             nn.Softplus(),
         )
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            z : (B, d_latent)
-        Returns:
-            book_pred : (B, 2, L, 2) — [price_rel, volume]
-        """
         B = z.shape[0]
         L = self.cfg.L
         h = self.trunk(z)
-        prices  = self.price_head(h).reshape(B, 2, L)   # (B, 2, L)
-        volumes = self.vol_head(h).reshape(B, 2, L)      # (B, 2, L)
-        return torch.stack([prices, volumes], dim=-1)    # (B, 2, L, 2)
+        prices  = self.price_head(h).reshape(B, 2, L)
+        volumes = self.vol_head(h).reshape(B, 2, L)
+        return torch.stack([prices, volumes], dim=-1)
 
 
 # ---------------------------------------------------------------------------
-# Temporal predictor head (training only)
+# Auxiliary heads (training only — all discarded after pretraining)
 # ---------------------------------------------------------------------------
 
 class TemporalPredictor(nn.Module):
-    """
-    Lightweight MLP that predicts z_{t+1} from z_t.
-    Used as auxiliary training signal — discarded after pretraining.
-    """
+    """MLP: z_t → z_{t+1}. No action conditioning (no market impact)."""
 
     def __init__(self, d_latent: int) -> None:
         super().__init__()
@@ -196,21 +175,71 @@ class TemporalPredictor(nn.Module):
         return self.net(z)
 
 
+class BookStatsPredictor(nn.Module):
+    """
+    Predicts aggregate book statistics from z.
+
+    Targets (computed from the normalised book, NOT per-sample normalised):
+      0: log(mean_bid_vol + eps)     — absolute scale, bid side
+      1: log(mean_ask_vol + eps)     — absolute scale, ask side
+      2: bid_l0_vol / (total_bid + eps)  — concentration at best bid
+      3: ask_l0_vol / (total_ask + eps)  — concentration at best ask
+
+    Why: the per-sample normalised recon loss removes absolute volume scale,
+    which is the primary regime discriminator. This head forces z to encode
+    scale information that the recon loss alone doesn't incentivise.
+    """
+
+    def __init__(self, d_latent: int) -> None:
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(d_latent, 64),
+            nn.GELU(),
+            nn.Linear(64, 4),
+        )
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        return self.net(z)
+
+    @staticmethod
+    def compute_targets(book: torch.Tensor) -> torch.Tensor:
+        """
+        Compute aggregate stats from normalised book.
+        Args:
+            book: (B, 2, L, 2) — last dim is [price_rel, vol_normalised]
+        Returns:
+            targets: (B, 4)
+        """
+        eps = 1e-6
+        bid_vols = book[:, 0, :, 1]    # (B, L)
+        ask_vols = book[:, 1, :, 1]    # (B, L)
+
+        mean_bid = bid_vols.mean(dim=1)   # (B,)
+        mean_ask = ask_vols.mean(dim=1)   # (B,)
+        total_bid = bid_vols.sum(dim=1)   # (B,)
+        total_ask = ask_vols.sum(dim=1)   # (B,)
+
+        log_mean_bid = torch.log(mean_bid + eps)
+        log_mean_ask = torch.log(mean_ask + eps)
+        bid_concentration = bid_vols[:, 0] / (total_bid + eps)
+        ask_concentration = ask_vols[:, 0] / (total_ask + eps)
+
+        return torch.stack([
+            log_mean_bid, log_mean_ask,
+            bid_concentration, ask_concentration
+        ], dim=1)
+
+
 # ---------------------------------------------------------------------------
-# Autoencoder — Proposal C
+# Autoencoder
 # ---------------------------------------------------------------------------
 
 class LOBAutoEncoder(nn.Module):
     """
-    Encoder + Decoder for pretraining. Training objective:
+    Encoder + auxiliary heads for pretraining.
 
-      L = L_recon + λ_temp * L_temporal + λ_decorr * L_decorr + λ_var * L_var
-
-    1. L_recon       : MSE on book volumes, level-weighted
-    2. L_temporal    : MSE between predicted z_{t+1} and actual encoded z_{t+1}
-    3. L_decorrelation: off-diagonal covariance penalty (VICReg covariance)
-    4. L_variance    : max(0, γ - std(z_d)) per dimension (VICReg variance)
-                       prevents dimensional collapse
+    L = L_recon + λ_stats * L_stats + λ_temp * L_temporal
+        + λ_decorr * L_decorr + λ_var * L_var
 
     After training, only the encoder is kept.
     """
@@ -221,8 +250,9 @@ class LOBAutoEncoder(nn.Module):
         self.encoder    = LOBEncoder(self.cfg)
         self.decoder    = LOBDecoder(self.cfg)
         self.temporal   = TemporalPredictor(self.cfg.d_latent)
+        self.stats_head = BookStatsPredictor(self.cfg.d_latent)
 
-        # Level weights: (1, 1, L, 1) for broadcasting over (B, 2, L, 2)
+        # Level weights for recon loss
         C = self.cfg
         weights = [1.0] * C.L
         for i, w in enumerate(C.level_weights):
@@ -237,122 +267,86 @@ class LOBAutoEncoder(nn.Module):
         self,
         book_pred: torch.Tensor,
         book_true: torch.Tensor,
-        w_price: float = 0.0,
-        w_vol:   float = 1.0,
     ) -> torch.Tensor:
-        """
-        Volume-normalised reconstruction loss.
-        book_pred/true: (B, 2, L, 2) — last dim is [price_rel, volume]
-
-        w_price=0 by default: relative tick offsets are near-deterministic.
-
-        The volume loss is normalised per-sample by the mean volume of
-        that sample. This prevents the loss from being dominated by
-        thick-book samples (low_vol regime) where absolute errors are
-        large but relative errors are small. Without normalisation,
-        thin-book samples (high_vol) get negligible gradient despite
-        having high relative reconstruction error.
-
-        Per-sample normalisation:
-            loss_i = Σ_{s,l} w_l * (pred - true)² / (mean_vol_i² + ε)
-        """
-        # Volume channel: (B, 2, L)
+        """Volume-normalised reconstruction loss (captures shape, not scale)."""
         vol_pred = book_pred[:, :, :, 1]
         vol_true = book_true[:, :, :, 1]
+        sq_err = (vol_pred - vol_true) ** 2
+        weighted_sq_err = sq_err * self.level_w.squeeze(-1)
+        sample_vol_sq = (vol_true ** 2).mean(dim=(1, 2), keepdim=True) + 1e-6
+        normalised_err = weighted_sq_err / sample_vol_sq
+        return normalised_err.mean()
 
-        sq_err = (vol_pred - vol_true) ** 2                      # (B, 2, L)
-        weighted_sq_err = sq_err * self.level_w.squeeze(-1)      # (B, 2, L)
-
-        # Per-sample normalisation: divide by mean volume² of that sample
-        # This makes the loss scale-invariant across regimes.
-        sample_vol_sq = (vol_true ** 2).mean(dim=(1, 2), keepdim=True) + 1e-6  # (B, 1, 1)
-        normalised_err = weighted_sq_err / sample_vol_sq                        # (B, 2, L)
-
-        loss_vol = normalised_err.mean()
-
-        if w_price > 0:
-            loss_price = (book_pred[:, :, :, 0] - book_true[:, :, :, 0]).pow(2).mean()
-            return w_price * loss_price + w_vol * loss_vol
-        return w_vol * loss_vol
+    def _stats_loss(
+        self,
+        z: torch.Tensor,
+        book: torch.Tensor,
+    ) -> torch.Tensor:
+        """MSE on aggregate book statistics (captures scale)."""
+        targets = BookStatsPredictor.compute_targets(book)  # (B, 4)
+        preds = self.stats_head(z)                          # (B, 4)
+        return F.mse_loss(preds, targets.detach())
 
     def _temporal_loss(
         self,
         z_t: torch.Tensor,
         z_t1_target: torch.Tensor,
     ) -> torch.Tensor:
-        """MSE between predicted and actual next latent."""
         z_t1_pred = self.temporal(z_t)
         return F.mse_loss(z_t1_pred, z_t1_target.detach())
 
     def _decorrelation_loss(self, z: torch.Tensor) -> torch.Tensor:
-        """
-        VICReg-style off-diagonal covariance penalty.
-        Penalises redundancy between latent dimensions.
-        """
         B, D = z.shape
-        z_c = z - z.mean(dim=0)              # centre
-        cov = (z_c.T @ z_c) / (B - 1)       # (D, D)
-        # Zero diagonal, penalise off-diagonal squared entries
+        z_c = z - z.mean(dim=0)
+        cov = (z_c.T @ z_c) / (B - 1)
         diag_mask = torch.eye(D, device=z.device, dtype=torch.bool)
-        off_diag  = cov[~diag_mask]
+        off_diag = cov[~diag_mask]
         return (off_diag ** 2).mean()
 
     def _variance_loss(self, z: torch.Tensor, gamma: float = 1.0) -> torch.Tensor:
-        """
-        VICReg variance term: penalizes dimensions with std < gamma.
-
-        L_var = (1/D) Σ_d max(0, γ - std(z_d))
-
-        Prevents dimensional collapse: without this, some z_d can have
-        std → 0, making those dimensions dead. The decorrelation loss
-        alone doesn't prevent this — it only prevents redundancy between
-        *active* dimensions.
-
-        gamma=1.0 is the target std per dimension (after standardization
-        the latent space is well-scaled for downstream modules).
-        """
-        std = z.std(dim=0)  # (D,)
+        std = z.std(dim=0)
         return F.relu(gamma - std).mean()
 
     def forward(
         self,
         book: torch.Tensor,
-        scalars: torch.Tensor,
         book_next: torch.Tensor | None = None,
-        scalars_next: torch.Tensor | None = None,
         lambda_temp:   float = 0.3,
+        lambda_stats:  float = 1.0,
         lambda_decorr: float = 0.05,
         lambda_var:    float = 0.1,
     ) -> tuple[torch.Tensor, torch.Tensor, dict]:
         """
         Args:
             book         : (B, 2, L, 2)
-            scalars      : (B, 4)
             book_next    : (B, 2, L, 2)  optional — for temporal loss
-            scalars_next : (B, 4)        optional — for temporal loss
             lambda_temp  : weight for temporal loss
+            lambda_stats : weight for aggregate stats loss
             lambda_decorr: weight for decorrelation loss
             lambda_var   : weight for variance loss (VICReg)
 
         Returns:
             z          : (B, d_latent)
             book_pred  : (B, 2, L, 2)
-            loss_dict  : {"total", "recon", "temporal", "decorr", "var"}
+            loss_dict  : {"total", "recon", "stats", "temporal", "decorr", "var"}
         """
-        z         = self.encoder(book, scalars)
+        z         = self.encoder(book)
         book_pred = self.decoder(z)
 
         loss_recon  = self._recon_loss(book_pred, book)
+        loss_stats  = self._stats_loss(z, book)
         loss_temp   = torch.tensor(0.0, device=z.device)
         loss_decorr = self._decorrelation_loss(z)
         loss_var    = self._variance_loss(z)
 
-        if book_next is not None and scalars_next is not None:
+        if book_next is not None and lambda_temp > 0:
             with torch.no_grad():
-                z_next = self.encoder(book_next, scalars_next)
+                z_next = self.encoder(book_next)
             loss_temp = self._temporal_loss(z, z_next)
+            loss_temp = torch.clamp(loss_temp, max=10.0)
 
         total = (loss_recon
+                 + lambda_stats * loss_stats
                  + lambda_temp * loss_temp
                  + lambda_decorr * loss_decorr
                  + lambda_var * loss_var)
@@ -360,14 +354,15 @@ class LOBAutoEncoder(nn.Module):
         return z, book_pred, {
             "total":    total,
             "recon":    loss_recon,
+            "stats":    loss_stats,
             "temporal": loss_temp,
             "decorr":   loss_decorr,
             "var":      loss_var,
         }
 
-    def encode(self, book: torch.Tensor, scalars: torch.Tensor) -> torch.Tensor:
+    def encode(self, book: torch.Tensor) -> torch.Tensor:
         """Encode only. Use after training."""
-        return self.encoder(book, scalars)
+        return self.encoder(book)
 
 
 # ---------------------------------------------------------------------------
@@ -385,27 +380,23 @@ if __name__ == "__main__":
     n_enc    = sum(p.numel() for p in model.encoder.parameters())
     print(f"Parametri totali  : {n_params:,}")
     print(f"Parametri encoder : {n_enc:,}")
+    print(f"d_latent          : {cfg.d_latent}")
 
     B = 32
-    book      = torch.randn(B, 2, cfg.L, 2).to(device)
-    scalars   = torch.randn(B, 4).to(device)
-    book_next = torch.randn(B, 2, cfg.L, 2).to(device)
-    sc_next   = torch.randn(B, 4).to(device)
+    book      = torch.randn(B, 2, cfg.L, 2).abs().to(device)  # abs for realistic vols
+    book_next = torch.randn(B, 2, cfg.L, 2).abs().to(device)
 
-    z, book_pred, losses = model(book, scalars, book_next, sc_next)
+    z, book_pred, losses = model(book, book_next)
     print(f"z shape        : {z.shape}            — atteso (B, {cfg.d_latent})")
     print(f"book_pred shape: {book_pred.shape}  — atteso (B, 2, {cfg.L}, 2)")
-    print(f"loss total     : {losses['total'].item():.4f}")
-    print(f"  recon        : {losses['recon'].item():.4f}")
-    print(f"  temporal     : {losses['temporal'].item():.4f}")
-    print(f"  decorr       : {losses['decorr'].item():.4f}")
-    print(f"  var          : {losses['var'].item():.4f}")
+    for k, v in losses.items():
+        print(f"  {k:12s}: {v.item():.4f}")
 
     losses["total"].backward()
     print("Backward       : OK")
 
     model.eval()
     with torch.no_grad():
-        z2 = model.encode(book, scalars)
+        z2 = model.encode(book)
     print(f"encode() shape : {z2.shape}  ✓")
     print("Tutto OK")

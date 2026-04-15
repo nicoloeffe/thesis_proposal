@@ -62,9 +62,12 @@ def load_encoder(ckpt_path: str, device: torch.device):
     ae.encoder.load_state_dict(ckpt["encoder"])
     if "decoder" in ckpt:
         ae.decoder.load_state_dict(ckpt["decoder"])
+    if "stats_head" in ckpt:
+        ae.stats_head.load_state_dict(ckpt["stats_head"])
     ae.eval()
     print(f"Encoder loaded  : {ckpt_path}")
-    print(f"  epoch={ckpt['epoch']}  val_loss={ckpt['val_loss']:.6f}")
+    val_metric = ckpt.get('val_recon', ckpt.get('val_loss', 0.0))
+    print(f"  epoch={ckpt['epoch']}  val_recon={val_metric:.6f}")
     print(f"  d_latent={cfg.d_latent}")
     return ae.encoder, ckpt["stats"], ae, cfg
 
@@ -135,12 +138,10 @@ def build_encoded_dataset(
 
     for i in range(0, len(idx), batch_size):
         b  = books[i:i+batch_size].to(device)
-        sc = scalars[i:i+batch_size].to(device)
         bn = books_n[i:i+batch_size].to(device)
-        sn = scalars_n[i:i+batch_size].to(device)
 
-        z  = encoder(b, sc)
-        zn = encoder(bn, sn)
+        z  = encoder(b)
+        zn = encoder(bn)
 
         Z_list.append(z.cpu().numpy())
         Zn_list.append(zn.cpu().numpy())
