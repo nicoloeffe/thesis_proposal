@@ -47,22 +47,17 @@ class EnvConfig:
     T_max: int = 1000
 
     # --- Reward ---
-    alpha_inventory: float = 1e-4
+    alpha_inventory: float = 1e-3   # penalità inventory nel reward del MM
 
     # --- Dataset generation ---
     N_episodes: int = 300
     dataset_path: str = "dataset.npz"
 
-    # --- Random policy ---
-    rand_delta_low: int = 1
-    rand_delta_high: int = 5
-    rand_qty_low: int = 1
-    rand_qty_high: int = 10
-
     # --- Avellaneda-Stoikov policy ---
     as_gamma: float = 5.0
     as_kappa: float = 50.0
-    as_mix_ratio: float = 1.0
+    as_mix_ratio: float = 1.0      # solo A-S (niente random policy nel dataset)
+    as_eta: float = -0.035         # shape parametro per dynamic order size (inventory assoluta)
 
     # --- Mixed regime episodes ---
     mixed_regime_frac: float = 0.30
@@ -71,7 +66,7 @@ class EnvConfig:
 
 
 # ─────────────────────────────────────────────────────────
-# CALIBRATION_NOTES
+# CALIBRATION_NOTES (v2)
 # ─────────────────────────────────────────────────────────
 #
 # Volume at level 0 depends on:
@@ -80,29 +75,22 @@ class EnvConfig:
 #   - MO consumption: λ_mo * E[mo_size+1], split across levels
 #   - Cancellations: λ_cancel * E[cancel_vol]
 #
-# For the book NOT to explode/collapse, we need the
-# in-flow ≈ out-flow at steady state. The parameters below
-# are chosen so that:
-#   low_vol:  in-flow > out-flow → book accumulates (thick)
-#   mid_vol:  in-flow ≈ out-flow → moderate depth
-#   high_vol: in-flow < out-flow → book is thin
+# Key constraint: E[MO_size] / L0_vol should be < ~1.5
+# to prevent book collapse and degenerate imbalance.
 #
-# σ_mid: 0.008 / 0.020 / 0.045  (ratio 1:2.5:5.6)
-#   Realistic for intraday: calm morning → volatile news event
+# Regime-defining params (set regime identity):
+#   σ_mid:     0.008 / 0.020 / 0.050
+#   p_informed: 0.08 / 0.20  / 0.35
+#   λ_mo:      0.35 / 0.50  / 0.75
 #
-# p_informed: 0.08 / 0.20 / 0.35  (ratio 1:2.5:4.4)
-#   Calm: few informed traders. Stressed: toxic flow.
+# Structural params (tuned for book stability):
+#   mo_size:   2.1  / 3.0  / 3.0
+#   λ_lo:      0.95 / 1.00 / 0.90
+#   λ_cancel:  0.40 / 0.50 / 0.55
 #
-# λ_mo: 0.4 / 0.5 / 0.7  (ratio 1:1.25:1.75)
-#   MO frequency increases moderately in stress, not dramatically.
-#
-# mo_size: 2.0 / 3.0 / 4.5  (ratio 1:1.5:2.25)
-#   Stressed MOs are more aggressive, sweeping deeper.
-#
-# λ_lo: 1.0 / 1.0 / 0.8  (ratio 1:1:0.8)
-#   LO supply is relatively stable. Slight decrease in stress
-#   as market makers widen or withdraw.
-#
-# λ_cancel: 0.4 / 0.5 / 0.7  (ratio 1:1.25:1.75)
-#   Faster cancellation in stress (protective pulling).
+# Measured steady-state (20 eps × 1000 step):
+#   L0 vol:      12 / 6 / 3       (ratio ~4x)
+#   L0 vuoto:    3% / 14% / 28%
+#   |imb|>0.8:  <0.1% / <0.2% / ~4%
+#   vol/side:    110 / 86 / 53    (ratio ~2x)
 # ─────────────────────────────────────────────────────────

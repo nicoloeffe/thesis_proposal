@@ -1,21 +1,27 @@
 """
-simulate.py — Generazione dataset offline multi-regime.
+simulate.py — Generazione dataset offline multi-regime con A-S + size deterministica (v2).
 
-Regimi diversificati: non solo σ_mid e p_informed, ma tutta la microstruttura
-del book (frequenza MO, aggressività, liquidità LO, cancellazioni).
-Questo rende i regimi distinguibili anche da un singolo snapshot.
+Modifiche rispetto a v1:
+  - baseline_vol per-regime: costante fissata per regime, non dipendente
+    dallo stato transitorio del book durante i regime switch.
+  - depth_mean robusta: media top-3 livelli invece di solo level 0
+    (evita q0=1 quando il best è vuoto).
+  - k clamped a [1, L] anche nella policy A-S (belt-and-suspenders).
+  - Regimi ricalibrati (v2): parametri strutturali (mo_size, lambda_lo,
+    lambda_cancel) aggiustati per produrre book depth ragionevoli.
+    I parametri regime-defining (sigma, p_informed, lambda_mo) sono invariati.
 
-Sequenze miste: una frazione degli episodi ha 1-2 regime switch intra-episodio.
-Il regime label è per-step, non per-episodio.
-
-Struttura del dataset salvato:
-    observations      : (N_total, obs_dim)
-    actions           : (N_total, 3)
-    rewards           : (N_total,)
-    next_observations : (N_total, obs_dim)
-    regimes           : (N_total,)   — 0/1/2, per-step
-    episode_ids       : (N_total,)   — identifies episode boundaries
-    switch_mask       : (N_total,)   — 1 at switch points, 0 otherwise
+Dataset salvato:
+  observations      : (N_total, obs_dim)
+  actions           : (N_total, 4)  — [delta_bid, delta_ask, q_bid, q_ask]
+  rewards           : (N_total,)
+  next_observations : (N_total, obs_dim)
+  regimes           : (N_total,)
+  episode_ids       : (N_total,)
+  switch_mask       : (N_total,)
+  timesteps         : (N_total,)
+  inventories       : (N_total,)
+  time_left         : (N_total,)
 """
 
 from __future__ import annotations
@@ -27,9 +33,8 @@ from dataclasses import replace
 from config import EnvConfig
 from env import MarketMakingEnv, Observation
 
-
 # ---------------------------------------------------------------------------
-# Regime definitions — diversified microstructure
+# Regime definitions
 # ---------------------------------------------------------------------------
 
 def _as_gamma(sigma_mid: float, tick_size: float = 0.01, inv_typical: float = 5.0) -> float:
@@ -37,72 +42,82 @@ def _as_gamma(sigma_mid: float, tick_size: float = 0.01, inv_typical: float = 5.
     return tick_size / (sigma_mid ** 2 * inv_typical)
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# CALIBRATION v2
+# ─────────────────────────────────────────────────────────────────────────
+# Parametri regime-defining (invariati):
+#   σ_mid:     0.008 / 0.020 / 0.050      ratio 1 : 2.5 : 6.25
+#   p_informed: 0.08 / 0.20  / 0.35
+#   λ_mo:      0.35 / 0.50  / 0.75
+#
+# Parametri strutturali (ricalibrati v2):
+#   mo_size:   2.1  / 3.0  / 3.0  (was 4.5 in high — causava book collapse)
+#   λ_lo:      0.95 / 1.00 / 0.90 (was 1.1/1.0/0.7)
+#   λ_cancel:  0.40 / 0.50 / 0.55 (was 0.3/0.5/0.75)
+#
+# Targets raggiunti:
+#   L0 vol:      12 / 6 / 3       (ratio ~4x, era ~10x)
+#   L0 vuoto:    3% / 14% / 28%
+#   |imb|>0.8:  <0.1% / <0.2% / ~4%
+#   vol/side:    110 / 86 / 53    (ratio ~2x, era ~10x)
+# ─────────────────────────────────────────────────────────────────────────
+
 REGIMES = [
     {
-        # low_vol: calm market. Factors vs baseline (mid_vol):
-        # σ 0.4x, λ_mo 0.7x, mo_size 0.7x, λ_lo 1.1x, λ_cancel 0.6x, p_inf 0.4x
         "name": "low_vol",
-        "sigma_mid":         0.008,
-        "p_informed":        0.08,
-        "lambda_mo_buy":     0.35,
-        "lambda_mo_sell":    0.35,
-        "mo_size_lambda":    2.1,
-        "lambda_lo_bid":     1.1,
-        "lambda_lo_ask":     1.1,
-        "lambda_cancel_bid": 0.30,
-        "lambda_cancel_ask": 0.30,
+        "sigma_mid": 0.008,
+        "p_informed": 0.08,
+        "lambda_mo_buy": 0.35,
+        "lambda_mo_sell": 0.35,
+        "mo_size_lambda": 2.1,
+        "lambda_lo_bid": 0.95,
+        "lambda_lo_ask": 0.95,
+        "lambda_cancel_bid": 0.40,
+        "lambda_cancel_ask": 0.40,
+        "baseline_vol": 110.0,
     },
     {
-        # mid_vol: baseline. Calibrated so λ_lo ≈ λ_mo + λ_cancel
-        # (near-balanced order flow, Cont & de Larrard 2013).
         "name": "mid_vol",
-        "sigma_mid":         0.020,
-        "p_informed":        0.20,
-        "lambda_mo_buy":     0.50,
-        "lambda_mo_sell":    0.50,
-        "mo_size_lambda":    3.0,
-        "lambda_lo_bid":     1.00,
-        "lambda_lo_ask":     1.00,
+        "sigma_mid": 0.020,
+        "p_informed": 0.20,
+        "lambda_mo_buy": 0.50,
+        "lambda_mo_sell": 0.50,
+        "mo_size_lambda": 3.0,
+        "lambda_lo_bid": 1.00,
+        "lambda_lo_ask": 1.00,
         "lambda_cancel_bid": 0.50,
         "lambda_cancel_ask": 0.50,
+        "baseline_vol": 85.0,
     },
     {
-        # high_vol: stressed market. Factors vs baseline:
-        # σ 2.5x, λ_mo 1.5x, mo_size 1.5x, λ_lo 0.7x, λ_cancel 1.5x, p_inf 1.75x
         "name": "high_vol",
-        "sigma_mid":         0.050,
-        "p_informed":        0.35,
-        "lambda_mo_buy":     0.75,
-        "lambda_mo_sell":    0.75,
-        "mo_size_lambda":    4.5,
-        "lambda_lo_bid":     0.70,
-        "lambda_lo_ask":     0.70,
-        "lambda_cancel_bid": 0.75,
-        "lambda_cancel_ask": 0.75,
+        "sigma_mid": 0.050,
+        "p_informed": 0.35,
+        "lambda_mo_buy": 0.75,
+        "lambda_mo_sell": 0.75,
+        "mo_size_lambda": 3.0,
+        "lambda_lo_bid": 0.90,
+        "lambda_lo_ask": 0.90,
+        "lambda_cancel_bid": 0.55,
+        "lambda_cancel_ask": 0.55,
+        "baseline_vol": 55.0,
     },
 ]
-# Compute A-S gamma from formula for each regime
+
 for _r in REGIMES:
     _r["as_gamma"] = _as_gamma(_r["sigma_mid"])
 
-
 # ---------------------------------------------------------------------------
-# Observation helper
+# Helpers
 # ---------------------------------------------------------------------------
 
 def obs_to_vector(obs: Observation, L: int) -> np.ndarray:
-    """Flatten an observation dict into a 1-D numpy array."""
     book_flat = obs["book"].flatten()
-    scalars = np.array([obs["mid"], obs["spread"], obs["imbalance"], obs["inventory"]])
+    scalars   = np.array([obs["mid"], obs["spread"], obs["imbalance"], obs["inventory"]])
     return np.concatenate([book_flat, scalars])
 
 
-# ---------------------------------------------------------------------------
-# Apply regime to env config
-# ---------------------------------------------------------------------------
-
 def apply_regime(cfg: EnvConfig, regime_idx: int) -> EnvConfig:
-    """Create a copy of cfg with all regime-specific parameters applied."""
     regime = REGIMES[regime_idx]
     return replace(
         cfg,
@@ -120,40 +135,27 @@ def apply_regime(cfg: EnvConfig, regime_idx: int) -> EnvConfig:
 
 
 def apply_regime_to_env(env: MarketMakingEnv, regime_idx: int) -> None:
-    """Switch the env's config to a new regime in-place (for mid-episode switch)."""
+    """
+    Hot-swap regime parameters on a running env.
+    Uses the per-regime baseline_vol constant instead of measuring
+    the current (transient) book state.
+    """
     regime = REGIMES[regime_idx]
-    env.cfg.sigma_mid       = regime["sigma_mid"]
-    env.cfg.p_informed      = regime["p_informed"]
-    env.cfg.lambda_mo_buy   = regime["lambda_mo_buy"]
-    env.cfg.lambda_mo_sell  = regime["lambda_mo_sell"]
-    env.cfg.mo_size_lambda  = regime["mo_size_lambda"]
-    env.cfg.lambda_lo_bid   = regime["lambda_lo_bid"]
-    env.cfg.lambda_lo_ask   = regime["lambda_lo_ask"]
+    env.cfg.sigma_mid         = regime["sigma_mid"]
+    env.cfg.p_informed        = regime["p_informed"]
+    env.cfg.lambda_mo_buy     = regime["lambda_mo_buy"]
+    env.cfg.lambda_mo_sell    = regime["lambda_mo_sell"]
+    env.cfg.mo_size_lambda    = regime["mo_size_lambda"]
+    env.cfg.lambda_lo_bid     = regime["lambda_lo_bid"]
+    env.cfg.lambda_lo_ask     = regime["lambda_lo_ask"]
     env.cfg.lambda_cancel_bid = regime["lambda_cancel_bid"]
     env.cfg.lambda_cancel_ask = regime["lambda_cancel_ask"]
-    env.cfg.as_gamma        = regime["as_gamma"]
-
-    # Recalculate baseline volume — cancellation rate (CST logic) uses this.
-    # Without this, the old baseline from reset() persists after regime switch,
-    # causing cancellation rates to be miscalibrated.
-    env._baseline_vol_per_side = max(
-        1.0, 0.5 * (env.book[0, :, 1].sum() + env.book[1, :, 1].sum())
-    )
-
+    env.cfg.as_gamma          = regime["as_gamma"]
+    # Use regime-specific constant, not transient book state
+    env._baseline_vol_per_side = regime["baseline_vol"]
 
 # ---------------------------------------------------------------------------
-# Random policy
-# ---------------------------------------------------------------------------
-
-def sample_random_action(cfg: EnvConfig, rng: np.random.Generator) -> tuple[float, float, float]:
-    delta_bid = float(rng.integers(cfg.rand_delta_low, cfg.rand_delta_high + 1))
-    delta_ask = float(rng.integers(cfg.rand_delta_low, cfg.rand_delta_high + 1))
-    qty = float(rng.integers(cfg.rand_qty_low, cfg.rand_qty_high + 1))
-    return delta_bid, delta_ask, qty
-
-
-# ---------------------------------------------------------------------------
-# Avellaneda-Stoikov policy
+# Avellaneda-Stoikov policy con size deterministica (book + inventory)
 # ---------------------------------------------------------------------------
 
 def sample_as_action(
@@ -161,29 +163,45 @@ def sample_as_action(
     cfg: EnvConfig,
     t: int,
     rng: np.random.Generator,
-) -> tuple[float, float, float]:
+) -> tuple[float, float, float, float]:
     mid = obs["mid"]
     inv = obs["inventory"]
+    L = cfg.L
     time_remaining = max(1e-3, (cfg.T_max - t) / cfg.T_max)
 
+    # Prezzi A-S classici
     r = mid - cfg.as_gamma * (cfg.sigma_mid ** 2) * time_remaining * inv
     half_spread = (
         0.5 * cfg.as_gamma * (cfg.sigma_mid ** 2) * time_remaining
         + np.log(1.0 + cfg.as_gamma / cfg.as_kappa) / cfg.as_gamma
     )
 
-    k_bid_raw = (mid - (r - half_spread)) / cfg.tick_size
-    k_ask_raw = ((r + half_spread) - mid) / cfg.tick_size
-
     noise = rng.normal(0.0, 0.5)
-    k_bid = float(np.clip(round(k_bid_raw + noise), 1, cfg.rand_delta_high))
-    k_ask = float(np.clip(round(k_ask_raw + noise), 1, cfg.rand_delta_high))
-    qty = float(rng.integers(cfg.rand_qty_low, cfg.rand_qty_high + 1))
-    return k_bid, k_ask, qty
+    k_bid = float(max(1, min(L, round((mid - (r - half_spread)) / cfg.tick_size + noise))))
+    k_ask = float(max(1, min(L, round(((r + half_spread) - mid) / cfg.tick_size + noise))))
 
+    # --- Robust depth estimate: average of top-3 levels ---
+    top_k = min(3, L)
+    bid_top = obs["book"][0, :top_k, 1].mean()
+    ask_top = obs["book"][1, :top_k, 1].mean()
+    depth_mean = max(1.0, 0.5 * (bid_top + ask_top))
+
+    # Scala naturale della size: ~15% profondità media
+    q0 = max(1.0, 0.15 * depth_mean)
+
+    # Distorsione asimmetrica basata su inventory (alla Stanford)
+    eta   = cfg.as_eta
+    q_bid = q0 * np.exp( eta * inv)   # se sei long, q_bid ↓
+    q_ask = q0 * np.exp(-eta * inv)   # se sei long, q_ask ↑
+
+    # Clamp soft: non superare la depth media
+    q_bid = float(max(1.0, min(q_bid, depth_mean)))
+    q_ask = float(max(1.0, min(q_ask, depth_mean)))
+
+    return k_bid, k_ask, q_bid, q_ask
 
 # ---------------------------------------------------------------------------
-# Generate switch schedule for a mixed episode
+# Switch schedule
 # ---------------------------------------------------------------------------
 
 def generate_switch_schedule(
@@ -193,75 +211,49 @@ def generate_switch_schedule(
     max_switches: int = 2,
     warmup_frac: float = 0.15,
 ) -> list[tuple[int, int]]:
-    """
-    Generate a list of (timestep, new_regime) switch events.
-
-    Switches happen only in the middle portion of the episode
-    (between warmup_frac and 1-warmup_frac) to avoid transients.
-    The new regime is always different from the current one.
-
-    Returns:
-        List of (t_switch, regime_idx) — sorted by time.
-    """
     n_switches = rng.integers(1, max_switches + 1)
     t_min = int(T_max * warmup_frac)
     t_max = int(T_max * (1 - warmup_frac))
-
     if t_max <= t_min:
         return []
-
     switch_times = sorted(rng.choice(range(t_min, t_max), size=n_switches, replace=False))
-
     schedule = []
     current = start_regime
     n_regimes = len(REGIMES)
     for t in switch_times:
-        # Pick a different regime
         candidates = [r for r in range(n_regimes) if r != current]
         new_regime = rng.choice(candidates)
         schedule.append((int(t), int(new_regime)))
         current = new_regime
-
     return schedule
 
-
 # ---------------------------------------------------------------------------
-# Single episode rollout (supports mid-episode regime switches)
+# Single episode rollout
 # ---------------------------------------------------------------------------
 
 def run_episode(
     cfg: EnvConfig,
     start_regime: int,
-    policy: str,
     rng: np.random.Generator,
     switch_schedule: list[tuple[int, int]] | None = None,
 ) -> dict[str, np.ndarray]:
-    """
-    Run a single episode, optionally with intra-episode regime switches.
-
-    Returns dict with per-step arrays:
-        observations, actions, rewards, next_observations,
-        regimes (per-step!), switch_mask
-    """
     cfg_r = apply_regime(cfg, start_regime)
     env = MarketMakingEnv(cfg_r)
-    ep_seed = int(rng.integers(0, 2**31))
-    obs = env.reset(seed=ep_seed)
+    obs = env.reset(seed=int(rng.integers(0, 2**31)))
+
+    # Set regime-specific baseline after reset
+    env._baseline_vol_per_side = REGIMES[start_regime]["baseline_vol"]
 
     switch_schedule = switch_schedule or []
     switch_dict = {t: r for t, r in switch_schedule}
 
-    obs_list = []
-    act_list = []
-    rew_list = []
-    nobs_list = []
-    reg_list = []
-    sw_list = []
+    obs_list, act_list, rew_list = [], [], []
+    nobs_list, reg_list, sw_list = [], [], []
+    ts_list, inv_list, tleft_list = [], [], []
 
     current_regime = start_regime
 
     for t in range(cfg.T_max):
-        # Check for regime switch
         is_switch = 0
         if t in switch_dict:
             new_regime = switch_dict[t]
@@ -269,12 +261,11 @@ def run_episode(
             current_regime = new_regime
             is_switch = 1
 
+        inventory_t = obs["inventory"]
+        time_left_t = (cfg.T_max - t) / cfg.T_max
         obs_vec = obs_to_vector(obs, cfg.L)
 
-        if policy == "as":
-            action = sample_as_action(obs, env.cfg, t, rng)
-        else:
-            action = sample_random_action(env.cfg, rng)
+        action = sample_as_action(obs, env.cfg, t, rng)
 
         next_obs, reward, done, _ = env.step(action)
         next_obs_vec = obs_to_vector(next_obs, cfg.L)
@@ -285,20 +276,25 @@ def run_episode(
         nobs_list.append(next_obs_vec)
         reg_list.append(current_regime)
         sw_list.append(is_switch)
+        ts_list.append(t)
+        inv_list.append(inventory_t)
+        tleft_list.append(time_left_t)
 
         obs = next_obs
         if done:
             break
 
     return {
-        "observations":      np.array(obs_list, dtype=np.float32),
-        "actions":           np.array(act_list, dtype=np.float32),
-        "rewards":           np.array(rew_list, dtype=np.float32),
+        "observations": np.array(obs_list, dtype=np.float32),
+        "actions": np.array(act_list, dtype=np.float32),
+        "rewards": np.array(rew_list, dtype=np.float32),
         "next_observations": np.array(nobs_list, dtype=np.float32),
-        "regimes":           np.array(reg_list, dtype=np.int8),
-        "switch_mask":       np.array(sw_list, dtype=np.int8),
+        "regimes": np.array(reg_list, dtype=np.int8),
+        "switch_mask": np.array(sw_list, dtype=np.int8),
+        "timesteps": np.array(ts_list, dtype=np.int32),
+        "inventories": np.array(inv_list, dtype=np.float32),
+        "time_left": np.array(tleft_list, dtype=np.float32),
     }
-
 
 # ---------------------------------------------------------------------------
 # Multi-regime dataset generation
@@ -310,13 +306,6 @@ def generate_dataset(
     verbose: bool = True,
     shuffle: bool = True,
 ) -> dict[str, np.ndarray]:
-    """
-    Generate a multi-regime dataset with:
-    - Pure single-regime episodes (equally split across regimes)
-    - Mixed episodes with intra-episode regime switches
-
-    Per-step regime labels and switch_mask are always included.
-    """
     cfg = cfg or EnvConfig()
     rng = np.random.default_rng(seed)
 
@@ -329,74 +318,66 @@ def generate_dataset(
     all_parts: list[dict] = []
     ep_counter = 0
 
-    # Decide policy per episode
-    n_as = int(cfg.N_episodes * cfg.as_mix_ratio)
-    n_random = cfg.N_episodes - n_as
-    policies = ["as"] * n_as + ["random"] * n_random
-    rng.shuffle(policies)
-    policy_idx = 0
+    # solo A-S
+    if verbose:
+        print("Policy: Avellaneda-Stoikov only (as_mix_ratio=1.0)")
 
-    # --- Pure single-regime episodes ---
+    # Pure episodes
     for i, regime in enumerate(REGIMES):
         n_eps = eps_per_regime + (1 if i < remainder else 0)
         if verbose:
-            print(f"\nRegime {i} — {regime['name']:10s}  "
-                  f"sigma={regime['sigma_mid']:.3f}  "
-                  f"p_informed={regime['p_informed']:.2f}  "
-                  f"lambda_mo={regime['lambda_mo_buy']:.1f}  "
-                  f"pure episodes={n_eps}")
+            print(
+                f"\nRegime {i} — {regime['name']:10s} "
+                f"sigma={regime['sigma_mid']:.3f} "
+                f"p_informed={regime['p_informed']:.2f} "
+                f"lambda_mo={regime['lambda_mo_buy']:.2f} "
+                f"mo_size={regime['mo_size_lambda']:.1f} "
+                f"baseline_vol={regime['baseline_vol']:.0f} "
+                f"pure episodes={n_eps}"
+            )
 
         for ep in range(n_eps):
-            policy = policies[policy_idx % len(policies)]
-            policy_idx += 1
-
-            part = run_episode(cfg, start_regime=i, policy=policy, rng=rng)
+            part = run_episode(cfg, start_regime=i, rng=rng)
             N_steps = len(part["rewards"])
             part["episode_ids"] = np.full(N_steps, ep_counter, dtype=np.int32)
             all_parts.append(part)
             ep_counter += 1
 
             if verbose and (ep + 1) % max(1, n_eps // 3) == 0:
-                print(f"    ep {ep+1:4d}/{n_eps}  policy={policy:6s}  "
-                      f"steps={N_steps}  regime={i}")
+                print(
+                    f"  ep {ep+1:4d}/{n_eps} policy=as     "
+                    f"steps={N_steps} regime={i}"
+                )
 
-    # --- Mixed regime episodes ---
+    # Mixed regime episodes
     if verbose and n_mixed > 0:
         print(f"\nMixed regime episodes: {n_mixed}")
 
     for ep in range(n_mixed):
         start_regime = int(rng.integers(0, n_regimes))
-        policy = policies[policy_idx % len(policies)]
-        policy_idx += 1
-
         schedule = generate_switch_schedule(
             start_regime, cfg.T_max, rng,
             max_switches=cfg.max_switches,
             warmup_frac=cfg.switch_warmup_frac,
         )
 
-        part = run_episode(
-            cfg, start_regime=start_regime, policy=policy,
-            rng=rng, switch_schedule=schedule,
-        )
+        part = run_episode(cfg, start_regime=start_regime, rng=rng, switch_schedule=schedule)
         N_steps = len(part["rewards"])
         part["episode_ids"] = np.full(N_steps, ep_counter, dtype=np.int32)
         all_parts.append(part)
         ep_counter += 1
 
         if verbose and (ep + 1) % max(1, n_mixed // 3) == 0:
-            n_sw = len(schedule)
-            regimes_hit = [start_regime] + [r for _, r in schedule]
-            print(f"    mixed ep {ep+1:4d}/{n_mixed}  policy={policy:6s}  "
-                  f"steps={N_steps}  switches={n_sw}  "
-                  f"regimes={regimes_hit}")
+            print(
+                f"  mixed ep {ep+1:4d}/{n_mixed} policy=as     "
+                f"steps={N_steps} switches={len(schedule)} "
+                f"regimes={[start_regime] + [r for _, r in schedule]}"
+            )
 
-    # --- Concatenate ---
     dataset = {
         key: np.concatenate([p[key] for p in all_parts], axis=0)
         for key in all_parts[0].keys()
     }
-
     N = len(dataset["rewards"])
 
     if shuffle:
@@ -405,58 +386,64 @@ def generate_dataset(
 
     if verbose:
         print(f"\n{'='*60}")
-        print(f"Dataset: {N:,} transitions from {ep_counter} episodes")
-        print(f"  observations shape : {dataset['observations'].shape}")
-        print(f"  shuffle            : {shuffle}")
-        print(f"  rewards — mean={dataset['rewards'].mean():.4f}  "
-              f"std={dataset['rewards'].std():.4f}")
+        print(f"Dataset: {N:,} transitions da {ep_counter} episodi")
+        print(f"  observations shape  : {dataset['observations'].shape}")
+        print(f"  actions shape       : {dataset['actions'].shape}")
+        print(f"  timesteps shape     : {dataset['timesteps'].shape}")
+        print(f"  inventories shape   : {dataset['inventories'].shape}")
+        print(f"  time_left shape     : {dataset['time_left'].shape}")
+        print(
+            f"  rewards      — mean={dataset['rewards'].mean():.4f} "
+            f"std={dataset['rewards'].std():.4f}"
+        )
+        print(
+            f"  inventories  — mean={dataset['inventories'].mean():.3f} "
+            f"std={dataset['inventories'].std():.3f} "
+            f"max_abs={np.abs(dataset['inventories']).max():.1f}"
+        )
         counts = np.bincount(dataset["regimes"], minlength=n_regimes)
         for i, regime in enumerate(REGIMES):
             frac = counts[i] / N * 100
-            print(f"  regime {i} ({regime['name']:10s}): "
-                  f"{counts[i]:7d} transitions ({frac:.1f}%)")
+            print(
+                f"  regime {i} ({regime['name']:10s}): "
+                f"{counts[i]:7d} transitions ({frac:.1f}%)"
+            )
         n_switches = dataset["switch_mask"].sum()
-        print(f"  regime switches    : {n_switches:,} total")
         n_mixed_actual = len(set(
-            dataset["episode_ids"][dataset["switch_mask"] == 1]
+            dataset["episode_ids"][dataset["switch_mask"] == 1].tolist()
         ))
-        print(f"  mixed episodes     : {n_mixed_actual}")
-
+        print(f"  regime switches     : {n_switches:,} totali")
+        print(f"  episodi misti       : {n_mixed_actual}")
 
     return dataset
 
 
 def save_dataset(dataset: dict[str, np.ndarray], path: str) -> None:
     np.savez_compressed(path, **dataset)
-    print(f"Dataset saved to {path}")
+    print(f"Dataset salvato in {path}")
 
 
-# ---------------------------------------------------------------------------
-# CLI entry point
-# ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generate offline multi-regime LOB dataset")
-    parser.add_argument("--episodes",     type=int,   default=None)
-    parser.add_argument("--T_max",        type=int,   default=None)
-    parser.add_argument("--seed",         type=int,   default=42)
-    parser.add_argument("--out",          type=str,   default=None)
-    parser.add_argument("--as_ratio",     type=float, default=None)
-    parser.add_argument("--mixed_frac",   type=float, default=None,
-                        help="Fraction of episodes with regime switches (default: 0.30)")
-    parser.add_argument("--no_shuffle",   action="store_true",
-                        help="Keep episodes in order, add episode_ids (for world model)")
+    parser = argparse.ArgumentParser(description="Genera dataset offline multi-regime LOB (A-S only)")
+    parser.add_argument("--episodes", type=int, default=None)
+    parser.add_argument("--T_max", type=int, default=None)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--out", type=str, default=None)
+    parser.add_argument("--mixed_frac", type=float, default=None)
+    parser.add_argument("--no_shuffle", action="store_true")
     args = parser.parse_args()
 
     cfg = EnvConfig()
-    if args.episodes   is not None: cfg.N_episodes        = args.episodes
-    if args.T_max      is not None: cfg.T_max             = args.T_max
-    if args.out        is not None: cfg.dataset_path      = args.out
-    if args.as_ratio   is not None: cfg.as_mix_ratio      = args.as_ratio
-    if args.mixed_frac is not None: cfg.mixed_regime_frac = args.mixed_frac
+    if args.episodes is not None:
+        cfg.N_episodes = args.episodes
+    if args.T_max is not None:
+        cfg.T_max = args.T_max
+    if args.out is not None:
+        cfg.dataset_path = args.out
+    if args.mixed_frac is not None:
+        cfg.mixed_regime_frac = args.mixed_frac
 
-    print(f"Generating {cfg.N_episodes} episodes x {cfg.T_max} steps "
-          f"across {len(REGIMES)} regimes ...")
-    print(f"  Pure: {int(cfg.N_episodes * (1 - cfg.mixed_regime_frac))}  "
-          f"Mixed: {int(cfg.N_episodes * cfg.mixed_regime_frac)}")
+    print(f"Generazione {cfg.N_episodes} episodi x {cfg.T_max} step "
+          f"su {len(REGIMES)} regimi (policy=A-S only)...")
     dataset = generate_dataset(cfg, seed=args.seed, shuffle=not args.no_shuffle)
     save_dataset(dataset, cfg.dataset_path)
