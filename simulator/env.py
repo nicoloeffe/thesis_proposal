@@ -81,7 +81,16 @@ class MarketMakingEnv:
         return self._make_obs()
 
     def step(self, action: Action) -> tuple[Observation, float, bool, dict]:
-        """Execute one environment step."""
+        """
+        Execute one environment step.
+
+        Timing convention (v3):
+          1. Remove old MM quotes, insert new ones
+          2. Sample shock and event counts (shock determines informed flow)
+          3. Execute all MOs, LOs, cancellations on current book
+          4. Compute PnL at execution prices (pre-shock)
+          5. Apply mid-price shock and shift book for next step
+        """
         delta_bid, delta_ask, q_bid, q_ask = action
 
         # --- 0. Remove previous MM quotes (cancel-and-replace) ---
@@ -101,23 +110,24 @@ class MarketMakingEnv:
         # --- 2. Insert MM quotes into book ---
         self._insert_mm_quotes(bid_price, ask_price, q_bid, q_ask)
 
-        # --- 3. Mid-price random walk ---
+        # --- 3. Sample shock and event counts ---
+        # The shock is sampled now but APPLIED AFTER executions.
+        # Informed traders observe the shock direction and trade accordingly.
         shock = self.rng.normal(0.0, self.cfg.sigma_mid)
-        old_mid = self.mid
-        self.mid = self._snap(self.mid + shock)
-        self._shift_book_prices(old_mid, self.mid)
 
-        # --- 4. Sample Poisson event counts ---
         n_mo_buy = self.rng.poisson(self.cfg.lambda_mo_buy)
         n_mo_sell = self.rng.poisson(self.cfg.lambda_mo_sell)
 
         n_informed = self.rng.poisson(
             0.5 * (self.cfg.lambda_mo_buy + self.cfg.lambda_mo_sell) * self.cfg.p_informed
         )
+        # Adverse selection: informed traders trade WITH the shock direction.
+        # shock > 0 → price will rise → informed BUY (sweep ask, hurt MM ask)
+        # shock < 0 → price will fall → informed SELL (sweep bid, hurt MM bid)
         if shock > 0:
-            n_mo_sell += n_informed
-        else:
             n_mo_buy += n_informed
+        else:
+            n_mo_sell += n_informed
 
         n_lo_bid = self.rng.poisson(self.cfg.lambda_lo_bid)
         n_lo_ask = self.rng.poisson(self.cfg.lambda_lo_ask)
@@ -128,7 +138,7 @@ class MarketMakingEnv:
         n_can_bid = self.rng.poisson(self.cfg.lambda_cancel_bid * max(0.1, bid_vol / base))
         n_can_ask = self.rng.poisson(self.cfg.lambda_cancel_ask * max(0.1, ask_vol / base))
 
-        # --- 5. Apply events; track MM executions ---
+        # --- 4. Apply events on CURRENT book (pre-shock prices) ---
         q_exec_ask = self._apply_mo_buy(n_mo_buy)
         q_exec_bid = self._apply_mo_sell(n_mo_sell)
         self._apply_lo(n_lo_bid, side=0)
@@ -136,13 +146,19 @@ class MarketMakingEnv:
         self._apply_cancellations(n_can_bid, side=0)
         self._apply_cancellations(n_can_ask, side=1)
 
-        # --- 6. Inventory and reward ---
-        inventory_prev = self.inventory
+        # --- 5. PnL at execution prices (pre-shock, consistent) ---
         self.inventory += q_exec_bid - q_exec_ask
 
-        realized_mid_move = self.mid - old_mid
-        spread_pnl = (ask_price - old_mid) * q_exec_ask + (old_mid - bid_price) * q_exec_bid
-        mtm_pnl = inventory_prev * realized_mid_move
+        spread_pnl = (ask_price - self.mid) * q_exec_ask + (self.mid - bid_price) * q_exec_bid
+
+        # --- 6. Apply mid-price shock AFTER executions ---
+        old_mid = self.mid
+        self.mid = self._snap(self.mid + shock)
+        self._shift_book_prices(old_mid, self.mid)
+
+        # MTM on full post-execution inventory: contracts just acquired
+        # also experience the shock within this timestep.
+        mtm_pnl = self.inventory * (self.mid - old_mid)
         pnl = spread_pnl + mtm_pnl
         reward = pnl - self.cfg.alpha_inventory * self.inventory ** 2
 
