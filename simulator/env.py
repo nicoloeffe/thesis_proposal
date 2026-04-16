@@ -1,13 +1,7 @@
 """
-MarketMakingEnv — Fase 1: Simulatore LOB (v2).
+MarketMakingEnv — Fase 1: Simulatore LOB .
 
-Modifiche rispetto a v1:
-  - Cancel-and-replace: le quote MM vengono rimosse a inizio step e reinserite.
-  - Pro-rata fills: il volume MM è tracciato separatamente; l'attribuzione
-    delle esecuzioni è proporzionale alla frazione MM sul livello.
-  - Protezione da cancellazioni: solo il volume background viene cancellato.
-  - Clamp k ∈ [1, L]: le quote MM non possono finire fuori dal book.
-  - Nessun fallback silenzioso in _place_mm_volume.
+
 
 Observation dict:
   book      : np.ndarray (2, L, 2) — [side, level, (price, volume)]
@@ -115,36 +109,38 @@ class MarketMakingEnv:
         # Informed traders observe the shock direction and trade accordingly.
         shock = self.rng.normal(0.0, self.cfg.sigma_mid)
 
+        # Market Orders (MO) rimangono invariati
         n_mo_buy = self.rng.poisson(self.cfg.lambda_mo_buy)
         n_mo_sell = self.rng.poisson(self.cfg.lambda_mo_sell)
 
         n_informed = self.rng.poisson(
             0.5 * (self.cfg.lambda_mo_buy + self.cfg.lambda_mo_sell) * self.cfg.p_informed
         )
-        # Adverse selection: informed traders trade WITH the shock direction.
-        # shock > 0 → price will rise → informed BUY (sweep ask, hurt MM ask)
-        # shock < 0 → price will fall → informed SELL (sweep bid, hurt MM bid)
         if shock > 0:
             n_mo_buy += n_informed
         else:
             n_mo_sell += n_informed
 
-        n_lo_bid = self.rng.poisson(self.cfg.lambda_lo_bid)
-        n_lo_ask = self.rng.poisson(self.cfg.lambda_lo_ask)
-
+        # --- NOVITÀ: Calcolo moltiplicatori per le cancellazioni ---
+        # Manteniamo la logica per cui se il book è troppo pieno, si cancella di più
         bid_vol = self.book[0, :, 1].sum()
         ask_vol = self.book[1, :, 1].sum()
         base = self._baseline_vol_per_side
-        n_can_bid = self.rng.poisson(self.cfg.lambda_cancel_bid * max(0.1, bid_vol / base))
-        n_can_ask = self.rng.poisson(self.cfg.lambda_cancel_ask * max(0.1, ask_vol / base))
+        
+        bid_mult = max(0.1, bid_vol / base)
+        ask_mult = max(0.1, ask_vol / base)
 
-        # --- 4. Apply events on CURRENT book (pre-shock prices) ---
+        # --- 4. Apply events on CURRENT book (vettoriale) ---
         q_exec_ask = self._apply_mo_buy(n_mo_buy)
         q_exec_bid = self._apply_mo_sell(n_mo_sell)
-        self._apply_lo(n_lo_bid, side=0)
-        self._apply_lo(n_lo_ask, side=1)
-        self._apply_cancellations(n_can_bid, side=0)
-        self._apply_cancellations(n_can_ask, side=1)
+        
+        # FIX: Chiamiamo le funzioni passandogli il lambda del config. 
+        # Il campionamento livello per livello avviene dentro le funzioni.
+        self._apply_lo(self.cfg.lambda_lo_bid, side=0)
+        self._apply_lo(self.cfg.lambda_lo_ask, side=1)
+
+        self._apply_cancellations(self.cfg.lambda_cancel_bid * bid_mult, side=0)
+        self._apply_cancellations(self.cfg.lambda_cancel_ask * ask_mult, side=1)
 
         # --- 5. PnL at execution prices (pre-shock, consistent) ---
         self.inventory += q_exec_bid - q_exec_ask
@@ -299,41 +295,37 @@ class MarketMakingEnv:
         return q_exec_mm
 
     # --- Limit orders and cancellations ---
+    def _apply_lo(self, n_base: float, side: int) -> None:
+        """Applica ordini limite con decadimento (lo_alpha) dal best price (L0)."""
+        levels = np.arange(self.cfg.L)
+        decay = np.exp(-self.cfg.lo_alpha * levels)
+        lambda_vec = n_base * decay
+        new_orders = self.rng.poisson(lambda_vec)
+        for lvl, n in enumerate(new_orders):
+            for _ in range(n): self.book[side, lvl, 1] += float(self.rng.integers(1, 11))
 
-    def _apply_lo(self, n: int, side: int) -> None:
-        probs = np.array([(0.8 ** lvl) * 0.2 for lvl in range(self.cfg.L)], dtype=np.float64)
-        probs /= probs.sum()
-        for _ in range(n):
-            lvl = self.rng.choice(self.cfg.L, p=probs)
-            vol = float(self.rng.integers(1, 11))
-            self.book[side, lvl, 1] += vol
+    def _apply_cancellations(self, n_base: int, side: int) -> None:
+            """
+            Applica cancellazioni con pressione crescente sui livelli profondi.
+            """
+            levels = np.arange(self.cfg.L)
+            # Pressione crescente: L9 viene cancellato ~2x più di L0
+            increase_vec = np.exp(0.01 * levels)
+            lambda_vec = n_base * increase_vec
 
-    def _apply_cancellations(self, n: int, side: int) -> None:
-        """
-        Cancel only background (non-MM) volume.
-        MM quotes persist until filled by MOs or explicitly removed
-        at the start of the next step via cancel-and-replace.
-        """
-        for _ in range(n):
-            # Build eligible list: levels with background volume > 0
-            eligible = []
-            for lvl in range(self.cfg.L):
-                bg_vol = self.book[side, lvl, 1] - self._mm_volume[side, lvl]
-                if bg_vol > 0.5:
-                    eligible.append(lvl)
-            if not eligible:
-                break
-            lvl = self.rng.choice(eligible)
-            bg_vol = self.book[side, lvl, 1] - self._mm_volume[side, lvl]
-            cancel_vol = float(self.rng.integers(1, max(2, int(bg_vol) + 1)))
-            cancel_vol = min(cancel_vol, bg_vol)
-            # Floor at MM volume: never eat into MM's share
-            self.book[side, lvl, 1] = max(
-                self._mm_volume[side, lvl],
-                self.book[side, lvl, 1] - cancel_vol,
-            )
+            cancels_per_level = self.rng.poisson(lambda_vec)
 
-    # --- Observation ---
+            for lvl, n_cancels in enumerate(cancels_per_level):
+                for _ in range(n_cancels):
+                    bg_vol = self.book[side, lvl, 1] - self._mm_volume[side, lvl]
+                    if bg_vol > 0.5:
+                        cancel_vol = float(self.rng.integers(1, max(2, int(bg_vol) + 1)))
+                        cancel_vol = min(cancel_vol, bg_vol)
+                        self.book[side, lvl, 1] = max(
+                            self._mm_volume[side, lvl],
+                            self.book[side, lvl, 1] - cancel_vol,
+                        )
+        # --- Observation ---
 
     def _make_obs(self) -> Observation:
         total_bid_vol = self.book[0, :, 1].sum()

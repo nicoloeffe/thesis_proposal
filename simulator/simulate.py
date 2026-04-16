@@ -1,15 +1,5 @@
 """
-simulate.py — Generazione dataset offline multi-regime con A-S + size deterministica (v2).
-
-Modifiche rispetto a v1:
-  - baseline_vol per-regime: costante fissata per regime, non dipendente
-    dallo stato transitorio del book durante i regime switch.
-  - depth_mean robusta: media top-3 livelli invece di solo level 0
-    (evita q0=1 quando il best è vuoto).
-  - k clamped a [1, L] anche nella policy A-S (belt-and-suspenders).
-  - Regimi ricalibrati (v2): parametri strutturali (mo_size, lambda_lo,
-    lambda_cancel) aggiustati per produrre book depth ragionevoli.
-    I parametri regime-defining (sigma, p_informed, lambda_mo) sono invariati.
+simulate.py — Generazione dataset offline multi-regime con A-S + size deterministica
 
 Dataset salvato:
   observations      : (N_total, obs_dim)
@@ -42,68 +32,55 @@ def _as_gamma(sigma_mid: float, tick_size: float = 0.01, inv_typical: float = 5.
     return tick_size / (sigma_mid ** 2 * inv_typical)
 
 
-# ─────────────────────────────────────────────────────────────────────────
-# CALIBRATION v2
-# ─────────────────────────────────────────────────────────────────────────
-# Parametri regime-defining (invariati):
-#   σ_mid:     0.008 / 0.020 / 0.050      ratio 1 : 2.5 : 6.25
-#   p_informed: 0.08 / 0.20  / 0.35
-#   λ_mo:      0.35 / 0.50  / 0.75
-#
-# Parametri strutturali (ricalibrati v2):
-#   mo_size:   2.1  / 3.0  / 3.0  (was 4.5 in high — causava book collapse)
-#   λ_lo:      0.95 / 1.00 / 0.90 (was 1.1/1.0/0.7)
-#   λ_cancel:  0.40 / 0.50 / 0.55 (was 0.3/0.5/0.75)
-#
-# Targets raggiunti:
-#   L0 vol:      12 / 6 / 3       (ratio ~4x, era ~10x)
-#   L0 vuoto:    3% / 14% / 28%
-#   |imb|>0.8:  <0.1% / <0.2% / ~4%
-#   vol/side:    110 / 86 / 53    (ratio ~2x, era ~10x)
-# ─────────────────────────────────────────────────────────────────────────
 
 REGIMES = [
     {
         "name": "low_vol",
         "sigma_mid": 0.008,
-        "p_informed": 0.08,
+        "p_informed": 0.02,
         "lambda_mo_buy": 0.35,
         "lambda_mo_sell": 0.35,
-        "mo_size_lambda": 2.1,
+        "mo_size_lambda": 3.0,     # CORREZIONE: Book denso = trader piazzano ordini grandi senza paura
         "lambda_lo_bid": 0.95,
         "lambda_lo_ask": 0.95,
-        "lambda_cancel_bid": 0.40,
-        "lambda_cancel_ask": 0.40,
-        "baseline_vol": 110.0,
+        "lambda_cancel_bid": 0.35,
+        "lambda_cancel_ask": 0.35,
+        "lo_alpha": 0.40,          # Pendenza decisa, liquidità centrata al best
+        "baseline_vol": 60.0,
+        "as_kappa": 80.0,
     },
     {
         "name": "mid_vol",
-        "sigma_mid": 0.020,
-        "p_informed": 0.20,
+        "sigma_mid": 0.015,
+        "p_informed": 0.10,
         "lambda_mo_buy": 0.50,
         "lambda_mo_sell": 0.50,
-        "mo_size_lambda": 3.0,
-        "lambda_lo_bid": 1.00,
-        "lambda_lo_ask": 1.00,
-        "lambda_cancel_bid": 0.50,
-        "lambda_cancel_ask": 0.50,
-        "baseline_vol": 85.0,
+        "mo_size_lambda": 2.5,     # Transizione logica
+        "lambda_lo_bid": 0.70,
+        "lambda_lo_ask": 0.70,
+        "lambda_cancel_bid": 0.45,
+        "lambda_cancel_ask": 0.45,
+        "lo_alpha": 0.25,          # Dispersione moderata
+        "baseline_vol": 35.0,
+        "as_kappa": 50.0,
     },
     {
         "name": "high_vol",
-        "sigma_mid": 0.050,
-        "p_informed": 0.35,
+        "sigma_mid": 0.028,
+        "p_informed": 0.18,
         "lambda_mo_buy": 0.75,
         "lambda_mo_sell": 0.75,
-        "mo_size_lambda": 3.0,
-        "lambda_lo_bid": 0.90,
-        "lambda_lo_ask": 0.90,
-        "lambda_cancel_bid": 0.55,
-        "lambda_cancel_ask": 0.55,
-        "baseline_vol": 55.0,
+        "mo_size_lambda": 2.0,     # CORREZIONE: Book sottile = frammentazione aggressiva (Order Splitting)
+        "lambda_lo_bid": 0.65,     # Aumentato per non farsi mangiare vivo dai cancel
+        "lambda_lo_ask": 0.65,
+        "lambda_cancel_bid": 0.50,
+        "lambda_cancel_ask": 0.50,
+        "lo_alpha": 0.15,          # CORREZIONE: Abbastanza piatto da fare la "gobba", ma non un rettangolo piatto.
+        "baseline_vol": 20.0,      # Rapporto esatto di 3x rispetto a low_vol (60/20)
+        "as_kappa": 30.0,
     },
 ]
-
+# (Il calcolo di as_gamma rimane uguale)
 for _r in REGIMES:
     _r["as_gamma"] = _as_gamma(_r["sigma_mid"])
 
@@ -130,16 +107,12 @@ def apply_regime(cfg: EnvConfig, regime_idx: int) -> EnvConfig:
         lambda_lo_ask=regime["lambda_lo_ask"],
         lambda_cancel_bid=regime["lambda_cancel_bid"],
         lambda_cancel_ask=regime["lambda_cancel_ask"],
+        lo_alpha=regime["lo_alpha"],
         as_gamma=regime["as_gamma"],
+        as_kappa=regime["as_kappa"], # FIX: Ora applichiamo la kappa specifica del regime
     )
 
-
 def apply_regime_to_env(env: MarketMakingEnv, regime_idx: int) -> None:
-    """
-    Hot-swap regime parameters on a running env.
-    Uses the per-regime baseline_vol constant instead of measuring
-    the current (transient) book state.
-    """
     regime = REGIMES[regime_idx]
     env.cfg.sigma_mid         = regime["sigma_mid"]
     env.cfg.p_informed        = regime["p_informed"]
@@ -150,9 +123,11 @@ def apply_regime_to_env(env: MarketMakingEnv, regime_idx: int) -> None:
     env.cfg.lambda_lo_ask     = regime["lambda_lo_ask"]
     env.cfg.lambda_cancel_bid = regime["lambda_cancel_bid"]
     env.cfg.lambda_cancel_ask = regime["lambda_cancel_ask"]
+    env.cfg.lo_alpha          = regime["lo_alpha"]
     env.cfg.as_gamma          = regime["as_gamma"]
-    # Use regime-specific constant, not transient book state
+    env.cfg.as_kappa          = regime["as_kappa"] 
     env._baseline_vol_per_side = regime["baseline_vol"]
+
 
 # ---------------------------------------------------------------------------
 # Avellaneda-Stoikov policy con size deterministica (book + inventory)
@@ -176,7 +151,7 @@ def sample_as_action(
         + np.log(1.0 + cfg.as_gamma / cfg.as_kappa) / cfg.as_gamma
     )
 
-    noise = rng.normal(0.0, 0.5)
+    noise = 0.0
     k_bid = float(max(1, min(L, round((mid - (r - half_spread)) / cfg.tick_size + noise))))
     k_ask = float(max(1, min(L, round(((r + half_spread) - mid) / cfg.tick_size + noise))))
 
@@ -191,9 +166,8 @@ def sample_as_action(
 
     # Distorsione asimmetrica basata su inventory (alla Stanford)
     eta   = cfg.as_eta
-    q_bid = q0 * np.exp( eta * inv)   # se sei long, q_bid ↓
-    q_ask = q0 * np.exp(-eta * inv)   # se sei long, q_ask ↑
-
+    q_bid = q0 * np.exp( eta * inv)   
+    q_ask = q0 * np.exp(-eta * inv)   
     # Clamp soft: non superare la depth media
     q_bid = float(max(1.0, min(q_bid, depth_mean)))
     q_ask = float(max(1.0, min(q_ask, depth_mean)))
