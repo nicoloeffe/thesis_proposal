@@ -1,5 +1,5 @@
 """
-encoder.py — Modulo A: Encoder Transformer del Limit Order Book (v3).
+encoder.py — Modulo A: Encoder Transformer del Limit Order Book (v5).
 
 Architettura:
   - Input    : book (2, L, 2) → 2L token, ciascuno con 2 feature (price, volume)
@@ -9,23 +9,40 @@ Architettura:
   - Pooling  : mean pooling sull'output
   - Latente  : proiezione lineare → z ∈ R^d_latent con spectral norm
 
-Note architetturali (v3):
-  - Nessun scalare in input: z codifica tutta la microstruttura dal book.
-  - Testa ausiliaria BookStatsPredictor: predice statistiche aggregate
-    (volume medio, concentrazione al best) da z. Questa testa risolve
-    il problema della normalizzazione per-sample nella recon loss,
-    che elimina il segnale di scala assoluta — il principale discriminante
-    tra regimi. La testa viene scartata dopo il training.
+Filosofia del Modulo A (v5):
+  L'encoder apprende una STATIC REPRESENTATION dello snapshot del book.
+  La struttura temporale è delegata interamente al Modulo B (Causal Transformer
+  + MDN head GMM).
+
+Cambiamenti v5 rispetto a v4:
+  - Rimossi VICReg variance + decorrelation loss:
+    * empiricamente non cambiavano i probe downstream (v4 vs v4.1 identici);
+    * reconstruction e stats loss prevengono già il collasso del latente;
+    * il whitening imposto da VICReg var era deleterio (distribuzione quasi-
+      sferica → perdita di struttura gerarchica tra regimi).
+  - Aggiunta On-Manifold Contractive Loss (L_contr):
+    * forza smoothness locale tramite coppie vicine NEL BATCH (non perturbazioni
+      sintetiche OOD);
+    * loss = mean(||z_i - z_j||² / ||o_i - o_j||²) per le coppie al di sotto
+      del tau-esimo percentile di pairwise distance nell'input;
+    * fornisce bound empirica della costante di Lipschitz dell'encoder ristretto
+      alla data manifold — condizione sufficiente per la stabilità del gradient
+      descent interno del Modulo C (DRO Wasserstein);
+    * generalizzabile a qualunque dataset (non sfrutta artefatti del data
+      generation, a differenza della temporal loss v3).
+
+Requisiti funzionali di z (v5):
+  1. Ricostruire il book                  → L_recon
+  2. Preservare scala e struttura aggreg. → L_stats
+  3. Bi-Lipschitz empirica sulla manifold → L_contr
 
 Training (autoencoder):
-  L = L_recon + λ_stats * L_stats + λ_temp * L_temporal
-      + λ_decorr * L_decorr + λ_var * L_var
+  L = L_recon + λ_stats * L_stats + λ_contr * L_contr
 
-  1. L_recon   : MSE volumi, level-weighted, per-sample normalised (shape)
-  2. L_stats   : MSE su aggregate book statistics (preserva scala assoluta)
-  3. L_temporal: z_t → z_{t+1} predictor (smoothness)
-  4. L_decorr  : VICReg off-diagonal covariance
-  5. L_var     : VICReg variance term
+  1. L_recon : MSE volumi, level-weighted, per-sample normalised (shape)
+  2. L_stats : MSE su 6 aggregate book statistics (scale, concentration,
+               imbalance, spread)
+  3. L_contr : on-manifold contractive loss su coppie vicine nel batch
 
 Reference: Technical Report — Modulo A, Sezione 1.
 """
@@ -47,7 +64,7 @@ class EncoderConfig:
     d_model:       int   = 128    # transformer internal dimension
     n_heads:       int   = 4      # attention heads
     n_layers:      int   = 4      # transformer encoder layers
-    d_latent:      int   = 24     # latent space dimension (was 16 in v2)
+    d_latent:      int   = 16     # latent space dimension (v4: ridotto da 24 a 16)
     dropout:       float = 0.1    # dropout in transformer
     level_weights: tuple = (4.0, 2.0)  # weights for level 0, 1; rest = 1.0
 
@@ -155,47 +172,45 @@ class LOBDecoder(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# Auxiliary heads (training only — all discarded after pretraining)
+# Auxiliary head: BookStatsPredictor (training only — discarded after)
 # ---------------------------------------------------------------------------
-
-class TemporalPredictor(nn.Module):
-    """MLP: z_t → z_{t+1}. No action conditioning (no market impact)."""
-
-    def __init__(self, d_latent: int) -> None:
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(d_latent, 128),
-            nn.GELU(),
-            nn.Linear(128, 128),
-            nn.GELU(),
-            nn.Linear(128, d_latent),
-        )
-
-    def forward(self, z: torch.Tensor) -> torch.Tensor:
-        return self.net(z)
-
 
 class BookStatsPredictor(nn.Module):
     """
     Predicts aggregate book statistics from z.
 
-    Targets (computed from the normalised book, NOT per-sample normalised):
-      0: log(mean_bid_vol + eps)     — absolute scale, bid side
-      1: log(mean_ask_vol + eps)     — absolute scale, ask side
-      2: bid_l0_vol / (total_bid + eps)  — concentration at best bid
-      3: ask_l0_vol / (total_ask + eps)  — concentration at best ask
+    Targets (6, computed from the normalised book):
+      0: log(mean_bid_vol + eps)           — absolute scale, bid side
+      1: log(mean_ask_vol + eps)           — absolute scale, ask side
+      2: bid_l0_vol / (total_bid + eps)    — concentration at best bid
+      3: ask_l0_vol / (total_ask + eps)    — concentration at best ask
+      4: (total_bid - total_ask) / total   — order flow imbalance (directional)
+      5: best_ask_price - best_bid_price   — spread, in normalised tick units
 
-    Why: the per-sample normalised recon loss removes absolute volume scale,
-    which is the primary regime discriminator. This head forces z to encode
-    scale information that the recon loss alone doesn't incentivise.
+    Why these 6:
+      - (0, 1): the per-sample-normalised recon loss removes absolute volume
+        scale, which is the primary regime discriminator. These targets force
+        z to encode scale info that recon alone doesn't incentivise.
+      - (2, 3): concentration captures book shape (concentrated vs distributed
+        liquidity), informative about regime and adverse selection.
+      - (4): imbalance is the single-best predictor of short-term mid-move
+        (Cartea-Jaimungal, Cont-de Larrard). Downstream (WM, critic) benefits
+        enormously from z that already encodes it.
+      - (5): spread is a direct proxy of liquidity and adverse selection cost,
+        and it's in the observation anyway — we make sure z preserves it.
+
+    The price features (bid/ask L0 prices) are already in normalised tick
+    units in the input book (computed in LOBDataset.normalize_book), so the
+    spread target is computed directly in those units.
     """
 
-    def __init__(self, d_latent: int) -> None:
+    def __init__(self, d_latent: int, n_targets: int = 6) -> None:
         super().__init__()
+        self.n_targets = n_targets
         self.net = nn.Sequential(
             nn.Linear(d_latent, 64),
             nn.GELU(),
-            nn.Linear(64, 4),
+            nn.Linear(64, n_targets),
         )
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
@@ -205,28 +220,38 @@ class BookStatsPredictor(nn.Module):
     def compute_targets(book: torch.Tensor) -> torch.Tensor:
         """
         Compute aggregate stats from normalised book.
+
         Args:
             book: (B, 2, L, 2) — last dim is [price_rel, vol_normalised]
+                  price_rel is already in normalised tick units (see
+                  LOBDataset.normalize_book in train_encoder.py)
         Returns:
-            targets: (B, 4)
+            targets: (B, 6)
         """
         eps = 1e-6
-        bid_vols = book[:, 0, :, 1]    # (B, L)
-        ask_vols = book[:, 1, :, 1]    # (B, L)
+        bid_vols   = book[:, 0, :, 1]   # (B, L)
+        ask_vols   = book[:, 1, :, 1]   # (B, L)
+        bid_prices = book[:, 0, :, 0]   # (B, L) — in normalised tick units
+        ask_prices = book[:, 1, :, 0]   # (B, L)
 
-        mean_bid = bid_vols.mean(dim=1)   # (B,)
-        mean_ask = ask_vols.mean(dim=1)   # (B,)
-        total_bid = bid_vols.sum(dim=1)   # (B,)
-        total_ask = ask_vols.sum(dim=1)   # (B,)
+        mean_bid  = bid_vols.mean(dim=1)
+        mean_ask  = ask_vols.mean(dim=1)
+        total_bid = bid_vols.sum(dim=1)
+        total_ask = ask_vols.sum(dim=1)
 
-        log_mean_bid = torch.log(mean_bid + eps)
-        log_mean_ask = torch.log(mean_ask + eps)
+        log_mean_bid      = torch.log(mean_bid + eps)
+        log_mean_ask      = torch.log(mean_ask + eps)
         bid_concentration = bid_vols[:, 0] / (total_bid + eps)
         ask_concentration = ask_vols[:, 0] / (total_ask + eps)
 
+        # NEW (v4): directional and liquidity features
+        imbalance = (total_bid - total_ask) / (total_bid + total_ask + eps)
+        spread    = ask_prices[:, 0] - bid_prices[:, 0]  # normalised tick units
+
         return torch.stack([
             log_mean_bid, log_mean_ask,
-            bid_concentration, ask_concentration
+            bid_concentration, ask_concentration,
+            imbalance, spread,
         ], dim=1)
 
 
@@ -238,8 +263,7 @@ class LOBAutoEncoder(nn.Module):
     """
     Encoder + auxiliary heads for pretraining.
 
-    L = L_recon + λ_stats * L_stats + λ_temp * L_temporal
-        + λ_decorr * L_decorr + λ_var * L_var
+    L = L_recon + λ_stats * L_stats + λ_decorr * L_decorr + λ_var * L_var
 
     After training, only the encoder is kept.
     """
@@ -249,7 +273,6 @@ class LOBAutoEncoder(nn.Module):
         self.cfg = cfg or EncoderConfig()
         self.encoder    = LOBEncoder(self.cfg)
         self.decoder    = LOBDecoder(self.cfg)
-        self.temporal   = TemporalPredictor(self.cfg.d_latent)
         self.stats_head = BookStatsPredictor(self.cfg.d_latent)
 
         # Level weights for recon loss
@@ -282,82 +305,90 @@ class LOBAutoEncoder(nn.Module):
         z: torch.Tensor,
         book: torch.Tensor,
     ) -> torch.Tensor:
-        """MSE on aggregate book statistics (captures scale)."""
-        targets = BookStatsPredictor.compute_targets(book)  # (B, 4)
-        preds = self.stats_head(z)                          # (B, 4)
+        """MSE on aggregate book statistics (scale + directional + liquidity)."""
+        targets = BookStatsPredictor.compute_targets(book)   # (B, 6)
+        preds   = self.stats_head(z)                         # (B, 6)
         return F.mse_loss(preds, targets.detach())
 
-    def _temporal_loss(
+    def _contractive_loss(
         self,
-        z_t: torch.Tensor,
-        z_t1_target: torch.Tensor,
+        z: torch.Tensor,
+        book: torch.Tensor,
+        tau_percentile: float = 10.0,
     ) -> torch.Tensor:
-        z_t1_pred = self.temporal(z_t)
-        return F.mse_loss(z_t1_pred, z_t1_target.detach())
+        """
+        On-manifold contractive loss.
 
-    def _decorrelation_loss(self, z: torch.Tensor) -> torch.Tensor:
-        B, D = z.shape
-        z_c = z - z.mean(dim=0)
-        cov = (z_c.T @ z_c) / (B - 1)
-        diag_mask = torch.eye(D, device=z.device, dtype=torch.bool)
-        off_diag = cov[~diag_mask]
-        return (off_diag ** 2).mean()
+        Per ogni batch: prende le coppie di sample più vicine in input-space
+        (sotto il tau_percentile-esimo percentile delle pairwise distances)
+        e forza i loro z a essere vicini proporzionalmente. Questo è
+        contractive ristretto alla data manifold — non usa perturbazioni
+        sintetiche OOD.
 
-    def _variance_loss(self, z: torch.Tensor, gamma: float = 1.0) -> torch.Tensor:
-        std = z.std(dim=0)
-        return F.relu(gamma - std).mean()
+        Loss: mean over near-pairs of ||z_i - z_j||² / (||o_i - o_j||² + eps)
+
+        Args:
+            z:    (B, d_latent)
+            book: (B, 2, L, 2)
+            tau_percentile: percentile cutoff per "vicini" (default 10).
+        """
+        B = book.shape[0]
+        eps = 1e-6
+        o = book.reshape(B, -1)                 # (B, D_in)
+
+        # Pairwise L2 distances (upper triangle only, no self-pairs)
+        do = torch.cdist(o, o, p=2)             # (B, B)
+        dz = torch.cdist(z, z, p=2)             # (B, B)
+        mask_upper = torch.triu(torch.ones_like(do, dtype=torch.bool), diagonal=1)
+
+        do_pairs = do[mask_upper]               # (B*(B-1)/2,)
+        dz_pairs = dz[mask_upper]
+
+        # Seleziona le pairs più vicine in input-space
+        k = max(1, int(len(do_pairs) * tau_percentile / 100.0))
+        _, near_idx = torch.topk(do_pairs, k=k, largest=False)
+        do_near = do_pairs[near_idx]
+        dz_near = dz_pairs[near_idx]
+
+        # Contractive ratio squared: vogliamo dz piccolo quando do è piccolo
+        ratio = (dz_near ** 2) / (do_near ** 2 + eps)
+        return ratio.mean()
 
     def forward(
         self,
         book: torch.Tensor,
-        book_next: torch.Tensor | None = None,
-        lambda_temp:   float = 0.3,
-        lambda_stats:  float = 1.0,
-        lambda_decorr: float = 0.05,
-        lambda_var:    float = 0.1,
+        lambda_stats: float = 3.0,
+        lambda_contr: float = 0.1,
+        contr_tau_percentile: float = 10.0,
     ) -> tuple[torch.Tensor, torch.Tensor, dict]:
         """
         Args:
-            book         : (B, 2, L, 2)
-            book_next    : (B, 2, L, 2)  optional — for temporal loss
-            lambda_temp  : weight for temporal loss
-            lambda_stats : weight for aggregate stats loss
-            lambda_decorr: weight for decorrelation loss
-            lambda_var   : weight for variance loss (VICReg)
+            book                 : (B, 2, L, 2)
+            lambda_stats         : weight for aggregate stats loss
+            lambda_contr         : weight for on-manifold contractive loss
+            contr_tau_percentile : percentile cutoff for "near pairs"
 
         Returns:
             z          : (B, d_latent)
             book_pred  : (B, 2, L, 2)
-            loss_dict  : {"total", "recon", "stats", "temporal", "decorr", "var"}
+            loss_dict  : {"total", "recon", "stats", "contr"}
         """
         z         = self.encoder(book)
         book_pred = self.decoder(z)
 
-        loss_recon  = self._recon_loss(book_pred, book)
-        loss_stats  = self._stats_loss(z, book)
-        loss_temp   = torch.tensor(0.0, device=z.device)
-        loss_decorr = self._decorrelation_loss(z)
-        loss_var    = self._variance_loss(z)
-
-        if book_next is not None and lambda_temp > 0:
-            with torch.no_grad():
-                z_next = self.encoder(book_next)
-            loss_temp = self._temporal_loss(z, z_next)
-            loss_temp = torch.clamp(loss_temp, max=10.0)
+        loss_recon = self._recon_loss(book_pred, book)
+        loss_stats = self._stats_loss(z, book)
+        loss_contr = self._contractive_loss(z, book, tau_percentile=contr_tau_percentile)
 
         total = (loss_recon
                  + lambda_stats * loss_stats
-                 + lambda_temp * loss_temp
-                 + lambda_decorr * loss_decorr
-                 + lambda_var * loss_var)
+                 + lambda_contr * loss_contr)
 
         return z, book_pred, {
-            "total":    total,
-            "recon":    loss_recon,
-            "stats":    loss_stats,
-            "temporal": loss_temp,
-            "decorr":   loss_decorr,
-            "var":      loss_var,
+            "total": total,
+            "recon": loss_recon,
+            "stats": loss_stats,
+            "contr": loss_contr,
         }
 
     def encode(self, book: torch.Tensor) -> torch.Tensor:
@@ -383,14 +414,13 @@ if __name__ == "__main__":
     print(f"d_latent          : {cfg.d_latent}")
 
     B = 32
-    book      = torch.randn(B, 2, cfg.L, 2).abs().to(device)  # abs for realistic vols
-    book_next = torch.randn(B, 2, cfg.L, 2).abs().to(device)
+    book = torch.randn(B, 2, cfg.L, 2).abs().to(device)  # abs for realistic vols
 
-    z, book_pred, losses = model(book, book_next)
+    z, book_pred, losses = model(book)
     print(f"z shape        : {z.shape}            — atteso (B, {cfg.d_latent})")
     print(f"book_pred shape: {book_pred.shape}  — atteso (B, 2, {cfg.L}, 2)")
     for k, v in losses.items():
-        print(f"  {k:12s}: {v.item():.4f}")
+        print(f"  {k:8s}: {v.item():.4f}")
 
     losses["total"].backward()
     print("Backward       : OK")
