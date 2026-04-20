@@ -1,9 +1,18 @@
 """
-simulate.py — Generazione dataset offline multi-regime con A-S + size deterministica
+simulate.py — Offline multi-regime LOB dataset generation with A-S + deterministic size.
 
-Dataset salvato:
+Regime design (post-refactor):
+  Each regime tunes four economically distinct channels:
+    - σ, p_informed, λ_mo, mo_size_λ      (price dynamics & toxicity)
+    - λ_lo, λ_cancel_per_share           (endogenous book depth)
+    - lo_alpha                            (volume profile shape)
+    - κ                                   (microstructure half-spread)
+  γ (MM risk aversion) is constant across regimes. α_inventory is constant across
+  regimes. baseline_vol has been removed — depth emerges from LO/cancel balance.
+
+Saved dataset fields:
   observations      : (N_total, obs_dim)
-  actions           : (N_total, 4)  — [delta_bid, delta_ask, q_bid, q_ask]
+  actions           : (N_total, 4)  — [k_bid, k_ask, q_bid, q_ask]
   rewards           : (N_total,)
   next_observations : (N_total, obs_dim)
   regimes           : (N_total,)
@@ -25,13 +34,13 @@ from env import MarketMakingEnv, Observation
 
 # ---------------------------------------------------------------------------
 # Regime definitions
+#
+# Calibrated to produce (at steady state):
+#   - depth ratio low:mid:high ≈ 3:1.5:1 (driven by λ_cancel_per_share)
+#   - spread ratio low:mid:high ≈ 1:1.7:2.6  (driven by σ and κ)
+#   - k_bid/k_ask ≈ 1.2 / 2.0 / 3.3 ticks (emerges from γ=5 + regime σ, κ)
+# γ is constant (set in EnvConfig); not regime-specific.
 # ---------------------------------------------------------------------------
-
-def _as_gamma(sigma_mid: float, tick_size: float = 0.01, inv_typical: float = 5.0) -> float:
-    """Optimal A-S risk-aversion: gamma = tick_size / (sigma^2 * inv_typical)."""
-    return tick_size / (sigma_mid ** 2 * inv_typical)
-
-
 
 REGIMES = [
     {
@@ -40,14 +49,13 @@ REGIMES = [
         "p_informed": 0.02,
         "lambda_mo_buy": 0.35,
         "lambda_mo_sell": 0.35,
-        "mo_size_lambda": 3.0,     # CORREZIONE: Book denso = trader piazzano ordini grandi senza paura
+        "mo_size_lambda": 3.0,
         "lambda_lo_bid": 0.95,
         "lambda_lo_ask": 0.95,
-        "lambda_cancel_bid": 0.35,
-        "lambda_cancel_ask": 0.35,
-        "lo_alpha": 0.40,          # Pendenza decisa, liquidità centrata al best
-        "baseline_vol": 60.0,
-        "as_kappa": 80.0,
+        "lambda_cancel_per_share": 0.08,  # slow cancellations → deep book
+        "lo_alpha": 0.40,                 # volumes concentrated near the best
+        "lo_best_supply": 0.85,           # mild L0 suppression (low adverse selection)
+        "as_kappa": 80.0,                 # tighter microstructure spread
     },
     {
         "name": "mid_vol",
@@ -55,13 +63,12 @@ REGIMES = [
         "p_informed": 0.10,
         "lambda_mo_buy": 0.50,
         "lambda_mo_sell": 0.50,
-        "mo_size_lambda": 2.5,     # Transizione logica
+        "mo_size_lambda": 2.5,
         "lambda_lo_bid": 0.70,
         "lambda_lo_ask": 0.70,
-        "lambda_cancel_bid": 0.45,
-        "lambda_cancel_ask": 0.45,
-        "lo_alpha": 0.25,          # Dispersione moderata
-        "baseline_vol": 35.0,
+        "lambda_cancel_per_share": 0.16,
+        "lo_alpha": 0.25,
+        "lo_best_supply": 0.70,           # moderate L0 suppression (hump at L1)
         "as_kappa": 50.0,
     },
     {
@@ -70,19 +77,15 @@ REGIMES = [
         "p_informed": 0.18,
         "lambda_mo_buy": 0.75,
         "lambda_mo_sell": 0.75,
-        "mo_size_lambda": 2.0,     # CORREZIONE: Book sottile = frammentazione aggressiva (Order Splitting)
-        "lambda_lo_bid": 0.65,     # Aumentato per non farsi mangiare vivo dai cancel
+        "mo_size_lambda": 2.0,
+        "lambda_lo_bid": 0.65,
         "lambda_lo_ask": 0.65,
-        "lambda_cancel_bid": 0.50,
-        "lambda_cancel_ask": 0.50,
-        "lo_alpha": 0.15,          # CORREZIONE: Abbastanza piatto da fare la "gobba", ma non un rettangolo piatto.
-        "baseline_vol": 20.0,      # Rapporto esatto di 3x rispetto a low_vol (60/20)
-        "as_kappa": 30.0,
+        "lambda_cancel_per_share": 0.28,  # aggressive cancellations → thin book
+        "lo_alpha": 0.15,                 # more disperse volumes across levels
+        "lo_best_supply": 0.65,           # strong-ish L0 suppression (high adverse selection, balanced against MO sweep)
+        "as_kappa": 30.0,                 # wider microstructure spread
     },
 ]
-# (Il calcolo di as_gamma rimane uguale)
-for _r in REGIMES:
-    _r["as_gamma"] = _as_gamma(_r["sigma_mid"])
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -95,6 +98,11 @@ def obs_to_vector(obs: Observation, L: int) -> np.ndarray:
 
 
 def apply_regime(cfg: EnvConfig, regime_idx: int) -> EnvConfig:
+    """Return a copy of cfg with the regime-specific fields overwritten.
+
+    γ (as_gamma) and α_inventory are NOT regime-specific: they remain at
+    the values set in cfg itself.
+    """
     regime = REGIMES[regime_idx]
     return replace(
         cfg,
@@ -105,32 +113,38 @@ def apply_regime(cfg: EnvConfig, regime_idx: int) -> EnvConfig:
         mo_size_lambda=regime["mo_size_lambda"],
         lambda_lo_bid=regime["lambda_lo_bid"],
         lambda_lo_ask=regime["lambda_lo_ask"],
-        lambda_cancel_bid=regime["lambda_cancel_bid"],
-        lambda_cancel_ask=regime["lambda_cancel_ask"],
+        lambda_cancel_per_share=regime["lambda_cancel_per_share"],
         lo_alpha=regime["lo_alpha"],
-        as_gamma=regime["as_gamma"],
-        as_kappa=regime["as_kappa"], # FIX: Ora applichiamo la kappa specifica del regime
+        lo_best_supply=regime["lo_best_supply"],
+        as_kappa=regime["as_kappa"],
     )
 
+
 def apply_regime_to_env(env: MarketMakingEnv, regime_idx: int) -> None:
+    """In-place regime switch on a live environment.
+
+    The book state is DELIBERATELY NOT reset: a regime switch is declared as
+    a structural shock on the parameter landscape, while the microstructure
+    state persists. The book then adapts gradually via the endogenous
+    LO/cancellation/MO processes (characteristic relaxation time
+    ≈ 1 / λ_cancel_per_share).
+    """
     regime = REGIMES[regime_idx]
-    env.cfg.sigma_mid         = regime["sigma_mid"]
-    env.cfg.p_informed        = regime["p_informed"]
-    env.cfg.lambda_mo_buy     = regime["lambda_mo_buy"]
-    env.cfg.lambda_mo_sell    = regime["lambda_mo_sell"]
-    env.cfg.mo_size_lambda    = regime["mo_size_lambda"]
-    env.cfg.lambda_lo_bid     = regime["lambda_lo_bid"]
-    env.cfg.lambda_lo_ask     = regime["lambda_lo_ask"]
-    env.cfg.lambda_cancel_bid = regime["lambda_cancel_bid"]
-    env.cfg.lambda_cancel_ask = regime["lambda_cancel_ask"]
-    env.cfg.lo_alpha          = regime["lo_alpha"]
-    env.cfg.as_gamma          = regime["as_gamma"]
-    env.cfg.as_kappa          = regime["as_kappa"] 
-    env._baseline_vol_per_side = regime["baseline_vol"]
+    env.cfg.sigma_mid               = regime["sigma_mid"]
+    env.cfg.p_informed              = regime["p_informed"]
+    env.cfg.lambda_mo_buy           = regime["lambda_mo_buy"]
+    env.cfg.lambda_mo_sell          = regime["lambda_mo_sell"]
+    env.cfg.mo_size_lambda          = regime["mo_size_lambda"]
+    env.cfg.lambda_lo_bid           = regime["lambda_lo_bid"]
+    env.cfg.lambda_lo_ask           = regime["lambda_lo_ask"]
+    env.cfg.lambda_cancel_per_share = regime["lambda_cancel_per_share"]
+    env.cfg.lo_alpha                = regime["lo_alpha"]
+    env.cfg.lo_best_supply          = regime["lo_best_supply"]
+    env.cfg.as_kappa                = regime["as_kappa"]
 
 
 # ---------------------------------------------------------------------------
-# Avellaneda-Stoikov policy con size deterministica (book + inventory)
+# Avellaneda-Stoikov policy with deterministic size (book + inventory)
 # ---------------------------------------------------------------------------
 
 def sample_as_action(
@@ -139,38 +153,49 @@ def sample_as_action(
     t: int,
     rng: np.random.Generator,
 ) -> tuple[float, float, float, float]:
+    """Avellaneda-Stoikov quoting with a mild inventory tilt on size.
+
+    Quote prices:
+        r           = mid - γ σ² (T-t)/T · inv
+        half_spread = 0.5 γ σ² (T-t)/T + log(1 + γ/κ) / γ
+    γ is constant across regimes (MM's risk preference).
+    Regime-level differentiation of half_spread comes from σ (volatility
+    channel) and κ (microstructure channel).
+
+    Size:
+        q0    = max(1, 0.15 · depth_mean_top3)
+        q_bid = max(1, q0 · exp(η · inv))
+        q_ask = max(1, q0 · exp(-η · inv))
+    A single law governs size; only a floor at 1, no upper clamp.
+    """
     mid = obs["mid"]
     inv = obs["inventory"]
     L = cfg.L
     time_remaining = max(1e-3, (cfg.T_max - t) / cfg.T_max)
 
-    # Prezzi A-S classici
+    # A-S quote prices
     r = mid - cfg.as_gamma * (cfg.sigma_mid ** 2) * time_remaining * inv
     half_spread = (
         0.5 * cfg.as_gamma * (cfg.sigma_mid ** 2) * time_remaining
         + np.log(1.0 + cfg.as_gamma / cfg.as_kappa) / cfg.as_gamma
     )
 
-    noise = 0.0
-    k_bid = float(max(1, min(L, round((mid - (r - half_spread)) / cfg.tick_size + noise))))
-    k_ask = float(max(1, min(L, round(((r + half_spread) - mid) / cfg.tick_size + noise))))
+    k_bid = float(max(1, min(L, round((mid - (r - half_spread)) / cfg.tick_size))))
+    k_ask = float(max(1, min(L, round(((r + half_spread) - mid) / cfg.tick_size))))
 
-    # --- Robust depth estimate: average of top-3 levels ---
+    # Robust depth estimate: average of top-3 levels
     top_k = min(3, L)
     bid_top = obs["book"][0, :top_k, 1].mean()
     ask_top = obs["book"][1, :top_k, 1].mean()
     depth_mean = max(1.0, 0.5 * (bid_top + ask_top))
 
-    # Scala naturale della size: ~15% profondità media
+    # Natural size scale: ~15% of the top-3 depth
     q0 = max(1.0, 0.15 * depth_mean)
 
-    # Distorsione asimmetrica basata su inventory (alla Stanford)
-    eta   = cfg.as_eta
-    q_bid = q0 * np.exp( eta * inv)   
-    q_ask = q0 * np.exp(-eta * inv)   
-    # Clamp soft: non superare la depth media
-    q_bid = float(max(1.0, min(q_bid, depth_mean)))
-    q_ask = float(max(1.0, min(q_ask, depth_mean)))
+    # Mild inventory tilt (no upper clamp; only a floor at 1)
+    eta = cfg.as_eta
+    q_bid = float(max(1.0, q0 * np.exp(eta * inv)))
+    q_ask = float(max(1.0, q0 * np.exp(-eta * inv)))
 
     return k_bid, k_ask, q_bid, q_ask
 
@@ -213,10 +238,9 @@ def run_episode(
 ) -> dict[str, np.ndarray]:
     cfg_r = apply_regime(cfg, start_regime)
     env = MarketMakingEnv(cfg_r)
+    # reset() runs a silent warmup (without MM) so the book starts at the
+    # endogenous equilibrium of the current regime. No external baseline is set.
     obs = env.reset(seed=int(rng.integers(0, 2**31)))
-
-    # Set regime-specific baseline after reset
-    env._baseline_vol_per_side = REGIMES[start_regime]["baseline_vol"]
 
     switch_schedule = switch_schedule or []
     switch_dict = {t: r for t, r in switch_schedule}
@@ -231,6 +255,7 @@ def run_episode(
         is_switch = 0
         if t in switch_dict:
             new_regime = switch_dict[t]
+            # Structural shock: parameters change, book state persists.
             apply_regime_to_env(env, new_regime)
             current_regime = new_regime
             is_switch = 1
@@ -292,9 +317,10 @@ def generate_dataset(
     all_parts: list[dict] = []
     ep_counter = 0
 
-    # solo A-S
     if verbose:
         print("Policy: Avellaneda-Stoikov only (as_mix_ratio=1.0)")
+        print(f"Shared MM params: γ={cfg.as_gamma}, α_inventory={cfg.alpha_inventory}, "
+              f"η={cfg.as_eta}, warmup_steps={cfg.warmup_steps}")
 
     # Pure episodes
     for i, regime in enumerate(REGIMES):
@@ -302,11 +328,12 @@ def generate_dataset(
         if verbose:
             print(
                 f"\nRegime {i} — {regime['name']:10s} "
-                f"sigma={regime['sigma_mid']:.3f} "
-                f"p_informed={regime['p_informed']:.2f} "
-                f"lambda_mo={regime['lambda_mo_buy']:.2f} "
+                f"σ={regime['sigma_mid']:.3f} "
+                f"κ={regime['as_kappa']:.0f} "
+                f"p_inf={regime['p_informed']:.2f} "
+                f"λ_mo={regime['lambda_mo_buy']:.2f} "
                 f"mo_size={regime['mo_size_lambda']:.1f} "
-                f"baseline_vol={regime['baseline_vol']:.0f} "
+                f"λ_cancel/share={regime['lambda_cancel_per_share']:.2f} "
                 f"pure episodes={n_eps}"
             )
 
