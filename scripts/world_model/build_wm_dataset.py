@@ -33,8 +33,8 @@ import numpy as np
 import torch
 
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent.parent / "simulator"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "simulator"))
 
 from models.encoder import LOBEncoder, EncoderConfig
 from training.train_encoder import LOBDataset

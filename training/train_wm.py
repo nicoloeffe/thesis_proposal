@@ -1,16 +1,20 @@
 """
-train_wm.py — Training del World Model (Modulo B).
+train_wm.py — Training del World Model (Modulo B) (v2).
 
 Pipeline:
   1. Carica wm_dataset.npz (sequenze latenti pre-calcolate dall'encoder)
-  2. Allena il Causal Transformer + GMM con NLL loss
+  2. Allena il Causal Transformer + GMM con NLL loss (solo sequenze z, no azioni)
   3. Logga NLL totale, entropia π (mode collapse), NLL per regime
   4. Salva checkpoint con model, config, stats
 
+Note (v2):
+  Il world model riceve solo sequenze di z — le azioni non sono passate
+  al modello perché la dinamica del LOB è indipendente dal MM nel
+  simulatore stilizzato (nessun market impact).
+
 Uso:
   python training/train_wm.py
-  python training/train_wm.py --dataset data/wm_dataset.npz \\
-                               --epochs 50 --seq_len 20
+  python training/train_wm.py --dataset data/wm_dataset.npz --epochs 50
 """
 
 from __future__ import annotations
@@ -40,30 +44,25 @@ class WMDataset(Dataset):
 
     Ogni campione è:
       sequences   : (N+1, d_latent)  — z_0..z_N
-      actions     : (N,   d_action)  — a_0..a_{N-1}
-      rewards     : (N,)             — r_0..r_{N-1}
       regimes     : (N,) or scalar   — per-step or per-episode regime (0/1/2)
       episode_id  : scalar           — episodio di origine
+
+    Actions and rewards are stored in the npz but NOT passed to the model.
+    They are available for downstream use (critic training).
     """
 
     def __init__(self, path: str, indices: np.ndarray | None = None) -> None:
         data = np.load(path)
-        sequences  = torch.from_numpy(data["sequences"])
-        actions    = torch.from_numpy(data["actions"])
-        rewards    = torch.from_numpy(data["rewards"])
-        regimes    = torch.from_numpy(data["regimes"].astype(np.int64))
-        ep_ids     = torch.from_numpy(data["episode_ids"].astype(np.int64))
+        sequences = torch.from_numpy(data["sequences"])
+        regimes   = torch.from_numpy(data["regimes"].astype(np.int64))
+        ep_ids    = torch.from_numpy(data["episode_ids"].astype(np.int64))
 
         if indices is not None:
             sequences = sequences[indices]
-            actions   = actions[indices]
-            rewards   = rewards[indices]
             regimes   = regimes[indices]
             ep_ids    = ep_ids[indices]
 
         self.sequences   = sequences
-        self.actions     = actions
-        self.rewards     = rewards
         self.regimes     = regimes
         self.episode_ids = ep_ids
 
@@ -77,8 +76,6 @@ class WMDataset(Dataset):
     def __getitem__(self, idx: int):
         return (
             self.sequences[idx],
-            self.actions[idx],
-            self.rewards[idx],
             self.regimes[idx],
         )
 
@@ -101,10 +98,9 @@ def episode_split(
 
     n_val_eps = max(1, int(len(unique_eps) * val_frac))
     val_eps   = set(unique_eps[:n_val_eps])
-    train_eps = set(unique_eps[n_val_eps:])
 
-    train_idx = np.where([ep not in val_eps   for ep in ep_ids])[0]
-    val_idx   = np.where([ep in val_eps        for ep in ep_ids])[0]
+    train_idx = np.where([ep not in val_eps for ep in ep_ids])[0]
+    val_idx   = np.where([ep in val_eps     for ep in ep_ids])[0]
 
     return train_idx, val_idx
 
@@ -118,14 +114,38 @@ def train(args: argparse.Namespace) -> None:
     print(f"Device : {device}")
     print(f"Dataset: {args.dataset}")
 
-    # --- Dataset — split by episode to avoid sequence overlap leak ---
+    # --- Carica normalization stats (se presenti) ---
+    raw = np.load(args.dataset)
+    z_mean = z_std = None
+    if "z_mean" in raw and "z_std" in raw:
+        z_mean = raw["z_mean"]
+        z_std  = raw["z_std"]
+        print(f"Z normalization stats loaded:")
+        print(f"  z_mean : [{z_mean.min():+.4f}, {z_mean.max():+.4f}]  "
+              f"mean={z_mean.mean():+.4f}")
+        print(f"  z_std  : [{z_std.min():.4f}, {z_std.max():.4f}]  "
+              f"mean={z_std.mean():.4f}")
+        # Verifica consistency con val_frac/split_seed usati in build_wm_dataset
+        if "val_frac" in raw and "split_seed" in raw:
+            ds_val_frac = float(raw["val_frac"][0])
+            ds_seed     = int(raw["split_seed"][0])
+            if abs(ds_val_frac - args.val_frac) > 1e-6:
+                print(f"  WARNING: val_frac mismatch "
+                      f"(dataset built with {ds_val_frac}, training with {args.val_frac})")
+            if ds_seed != 42:
+                print(f"  WARNING: dataset built with split_seed={ds_seed}, "
+                      f"training uses seed=42 (hardcoded in episode_split)")
+    else:
+        print("WARNING: dataset does not contain z_mean/z_std. "
+              "Training on un-normalized latents may cause GMM mode collapse.")
+
+    # --- Dataset — split by episode ---
     print(f"Building episode-based train/val split (val_frac={args.val_frac})...")
     train_idx, val_idx = episode_split(args.dataset, val_frac=args.val_frac)
     train_ds = WMDataset(args.dataset, indices=train_idx)
     val_ds   = WMDataset(args.dataset, indices=val_idx)
     print(f"  train: {len(train_idx):,}  val: {len(val_idx):,}")
 
-    # Infer d_latent from data
     d_latent = train_ds.D
     regimes_per_step = (train_ds.regimes[0].dim() == 1)
     print(f"  d_latent={d_latent}  seq_len={train_ds.N}  "
@@ -146,14 +166,18 @@ def train(args: argparse.Namespace) -> None:
     cfg.d_latent = d_latent
     cfg.n_gmm = args.n_gmm
     cfg.lambda_regime = args.lambda_regime
+    cfg.dropout = args.dropout
     model = LOBWorldModel(cfg).to(device)
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"Model params: {n_params:,}  lambda_regime={cfg.lambda_regime}")
+    print(f"Model params: {n_params:,}  lambda_regime={cfg.lambda_regime}  "
+          f"dropout={cfg.dropout}")
 
     # --- Optimiser + scheduler ---
     optimizer = torch.optim.AdamW(
-        model.parameters(), lr=args.lr, weight_decay=1e-4
+        model.parameters(), lr=args.lr, weight_decay=args.weight_decay
     )
+    print(f"Optimizer: AdamW  lr={args.lr}  wd={args.weight_decay}  "
+          f"grad_clip={args.grad_clip}")
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=args.epochs, eta_min=args.lr * 0.01
     )
@@ -170,17 +194,17 @@ def train(args: argparse.Namespace) -> None:
         tr_nll = 0.0
         tr_reg_acc = 0.0
 
-        for z_seq, a_seq, rewards, regimes in train_loader:
+        for z_seq, regimes in train_loader:
             z_seq   = z_seq.to(device, non_blocking=True)
-            a_seq   = a_seq.to(device, non_blocking=True)
             regimes = regimes.to(device, non_blocking=True)
 
             # Expand per-episode regimes to per-step if needed
             if regimes.dim() == 1:
-                regimes = regimes.unsqueeze(1).expand(-1, a_seq.shape[1])
+                N = z_seq.shape[1] - 1
+                regimes = regimes.unsqueeze(1).expand(-1, N)
 
             optimizer.zero_grad()
-            pi, mu, log_sig = model(z_seq, a_seq)
+            pi, mu, log_sig = model(z_seq)
             z_next = z_seq[:, 1:, :]
 
             loss_nll = model.nll_loss(pi, mu, log_sig, z_next)
@@ -207,15 +231,15 @@ def train(args: argparse.Namespace) -> None:
         cnt_per_regime = {0: 0,   1: 0,   2: 0}
 
         with torch.no_grad():
-            for z_seq, a_seq, rewards, regimes in val_loader:
+            for z_seq, regimes in val_loader:
                 z_seq   = z_seq.to(device, non_blocking=True)
-                a_seq   = a_seq.to(device, non_blocking=True)
                 regimes = regimes.to(device, non_blocking=True)
 
                 if regimes.dim() == 1:
-                    regimes = regimes.unsqueeze(1).expand(-1, a_seq.shape[1])
+                    N = z_seq.shape[1] - 1
+                    regimes = regimes.unsqueeze(1).expand(-1, N)
 
-                pi, mu, log_sig = model(z_seq, a_seq)
+                pi, mu, log_sig = model(z_seq)
                 z_next = z_seq[:, 1:, :]
 
                 val_nll += model.nll_loss(pi, mu, log_sig, z_next).item()
@@ -270,6 +294,8 @@ def train(args: argparse.Namespace) -> None:
             "val_nll":  val_nll,
             "model":    model.state_dict(),
             "cfg":      cfg.__dict__,
+            "z_mean":   z_mean,
+            "z_std":    z_std,
         }
         if val_nll < best_val:
             best_val = val_nll
@@ -300,14 +326,19 @@ if __name__ == "__main__":
     parser.add_argument("--epochs",        type=int,   default=100)
     parser.add_argument("--batch_size",    type=int,   default=256)
     parser.add_argument("--lr",            type=float, default=1e-3)
-    parser.add_argument("--grad_clip",     type=float, default=1.0)
+    parser.add_argument("--grad_clip",     type=float, default=0.5,
+                        help="Gradient clipping (v2.1: 1.0 -> 0.5)")
     parser.add_argument("--val_frac",      type=float, default=0.1)
     parser.add_argument("--num_workers",   type=int,   default=4)
     parser.add_argument("--n_gmm",         type=int,   default=5)
     parser.add_argument("--lambda_regime", type=float, default=0.1,
                         help="Weight for regime classification auxiliary loss")
-    parser.add_argument("--patience",      type=int,   default=15,
-                        help="Early stopping patience")
+    parser.add_argument("--dropout",       type=float, default=0.2,
+                        help="Dropout in transformer (v2.1: 0.1 -> 0.2)")
+    parser.add_argument("--weight_decay",  type=float, default=3e-4,
+                        help="AdamW weight decay (v2.1: 1e-4 -> 3e-4)")
+    parser.add_argument("--patience",      type=int,   default=30,
+                        help="Early stopping patience (v2.1: 15 -> 30)")
     parser.add_argument("--ckpt_dir",      type=str,   default="checkpoints")
     args = parser.parse_args()
     train(args)

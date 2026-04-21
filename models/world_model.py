@@ -1,16 +1,37 @@
 """
-world_model.py — Modulo B: World Model neurale per la dinamica latente del LOB.
+world_model.py — Modulo B: World Model neurale per la dinamica latente del LOB (v2).
 
 Architettura:
-  - Input  : sequenza di coppie (z_t, a_t) con z_t ∈ R^d_latent, a_t ∈ R^d_action
-  - Token  : proiezione lineare [z_t, a_t] → d_model + positional encoding appreso
+  - Input  : sequenza di latenti z_t ∈ R^d_latent (NO azioni, NO stato MM)
+  - Token  : proiezione lineare z_t → d_model + positional encoding appreso
   - Core   : Causal Transformer (4 layer, 4 heads, pre-norm, causal mask)
   - Output : GMM head — K componenti con parametri (π_k, μ_k, log_σ_k) per ogni timestep
 
+Scelte di design (giustificate nel report):
+
+  1. NO action conditioning.
+     Nel simulatore stilizzato (v1, senza market impact) la dinamica del LOB
+     è indipendente dalle azioni del MM:
+         P(z_{t+1} | z_t, a_t) = P(z_{t+1} | z_t)
+     Le azioni influenzano solo l'inventario e il PnL, pertinenti al critico
+     (Fase 3), non al world model.
+
+  2. NO MM state (inventory, time_left).
+     Lo stato interno del MM non influenza la marginale P(z_{t+1} | z_t):
+     è informazione privata del MM, non osservabile dal mercato. Il dataset WM
+     contiene comunque inventory e time_left per uso downstream (critic training),
+     ma non vengono passati al WM.
+
+  3. Dinamica genuinamente stocastica.
+     Anche condizionatamente a z_t, la transizione contiene rumore irriducibile
+     (shock gaussiano del mid, arrivi Poisson di MO/LO/cancel, pro-rata sampling).
+     La mixture con K componenti cattura questa varianza — una singola gaussiana
+     sarebbe sotto-parametrizzata nei regimi ad alta volatilità.
+
 Training:
   - Teacher forcing su tutta la sequenza
-  - Loss: NLL della GMM (log-sum-exp trick per stabilità)
-  - Logging: NLL totale, entropia dei pesi π (mode collapse check), NLL per regime
+  - Loss: NLL della GMM (log-sum-exp trick per stabilità numerica)
+  - Auxiliary: regime classification head (regolarizzazione dello hidden state)
 
 Reference: Technical Report — Modulo B.
 """
@@ -28,8 +49,7 @@ import math
 # ---------------------------------------------------------------------------
 
 class WorldModelConfig:
-    d_latent:       int   = 24     # latent dim (must match EncoderConfig.d_latent)
-    d_action:       int   = 3      # action dim (k_bid, k_ask, qty)
+    d_latent:       int   = 16     # latent dim (must match EncoderConfig.d_latent, v5: 16)
     d_model:        int   = 128    # transformer internal dim
     n_heads:        int   = 4      # attention heads
     n_layers:       int   = 4      # transformer layers
@@ -65,11 +85,9 @@ class CausalTransformerBlock(nn.Module):
         )
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        # Pre-norm attention
         x_norm = self.norm1(x)
         attn_out, _ = self.attn(x_norm, x_norm, x_norm, attn_mask=mask)
         x = x + attn_out
-        # Pre-norm FFN
         x = x + self.ffn(self.norm2(x))
         return x
 
@@ -84,11 +102,6 @@ class GMMHead(nn.Module):
       π_k     : mixture weights (softmax)
       μ_k     : means ∈ R^d_latent
       log_σ_k : log std ∈ R^d_latent (diagonal covariance)
-
-    Output shapes (given input h: (B, T, d_model)):
-      pi      : (B, T, K)
-      mu      : (B, T, K, d_latent)
-      log_sig : (B, T, K, d_latent)
     """
 
     def __init__(self, cfg: WorldModelConfig) -> None:
@@ -110,7 +123,9 @@ class GMMHead(nn.Module):
         pi      = F.softmax(self.pi_head(h), dim=-1)          # (B, T, K)
         mu      = self.mu_head(h).reshape(B, T, K, D)         # (B, T, K, D)
         log_sig = self.sig_head(h).reshape(B, T, K, D)        # (B, T, K, D)
-        log_sig = torch.clamp(log_sig, -6.0, 2.0)             # numerical stability
+        # Clamp log_sig per z normalizzato (std=1 globale):
+        # σ ∈ [e^-4.5, e^0.7] = [0.011, 2.01] — range adeguato alla scala N(0,1)
+        log_sig = torch.clamp(log_sig, -4.5, 0.7)
 
         return pi, mu, log_sig
 
@@ -123,16 +138,16 @@ class LOBWorldModel(nn.Module):
     """
     Causal Transformer World Model for LOB latent dynamics.
 
-    Given a sequence (z_0, a_0), ..., (z_{N-1}, a_{N-1}), predicts
+    Given a sequence z_0, ..., z_{N-1}, predicts
     the distribution of z_1, ..., z_N as a GMM at each position.
 
+    No action conditioning: the LOB dynamics in the stylised simulator
+    are independent of MM actions (no market impact).
+
     In training with teacher forcing:
-      - Input tokens: [(z_0,a_0), (z_1,a_1), ..., (z_{N-1},a_{N-1})]
+      - Input tokens: [z_0, z_1, ..., z_{N-1}]
       - Targets:      [z_1, z_2, ..., z_N]
       - Loss: NLL averaged over all positions and batch
-
-    At inference:
-      - Pass context window, take output at last position as prediction.
     """
 
     def __init__(self, cfg: WorldModelConfig | None = None) -> None:
@@ -140,8 +155,8 @@ class LOBWorldModel(nn.Module):
         self.cfg = cfg or WorldModelConfig()
         C = self.cfg
 
-        # Input projection: [z_t, a_t] → d_model
-        self.input_proj = nn.Linear(C.d_latent + C.d_action, C.d_model)
+        # Input projection: z_t → d_model (no actions)
+        self.input_proj = nn.Linear(C.d_latent, C.d_model)
 
         # Learned positional encoding
         self.pos_emb = nn.Embedding(C.max_seq, C.d_model)
@@ -154,9 +169,7 @@ class LOBWorldModel(nn.Module):
         self.norm_out = nn.LayerNorm(C.d_model)
         self.gmm_head = GMMHead(C)
 
-        # Auxiliary regime classification head (per-step).
-        # Forces transformer hidden states to encode regime information,
-        # which propagates to GMM parameters.
+        # Auxiliary regime classification head
         self.regime_head = nn.Sequential(
             nn.Linear(C.d_model, 64),
             nn.GELU(),
@@ -176,19 +189,16 @@ class LOBWorldModel(nn.Module):
                 nn.init.normal_(m.weight, std=0.02)
 
     def _causal_mask(self, T: int, device: torch.device) -> torch.Tensor:
-        """Upper-triangular mask for causal attention. True = masked out."""
         mask = torch.triu(torch.ones(T, T, device=device), diagonal=1).bool()
         return mask
 
     def forward(
         self,
-        z_seq:  torch.Tensor,   # (B, N+1, d_latent)  — z_0 .. z_N
-        a_seq:  torch.Tensor,   # (B, N,   d_action)   — a_0 .. a_{N-1}
+        z_seq: torch.Tensor,   # (B, N+1, d_latent) — z_0 .. z_N
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
-            z_seq : (B, N+1, d_latent)  — latent sequence including target z_N
-            a_seq : (B, N,   d_action)  — action sequence
+            z_seq : (B, N+1, d_latent) — latent sequence including target z_N
 
         Returns:
             pi      : (B, N, K)
@@ -197,29 +207,29 @@ class LOBWorldModel(nn.Module):
 
         where outputs at position t predict z_{t+1}.
         """
-        B, N, _ = a_seq.shape
+        B = z_seq.shape[0]
+        N = z_seq.shape[1] - 1
 
-        # Input: (z_0..z_{N-1}, a_0..a_{N-1}) → (B, N, d_latent+d_action)
-        z_in  = z_seq[:, :N, :]                           # (B, N, d_latent)
-        token = torch.cat([z_in, a_seq], dim=-1)          # (B, N, d_latent+d_action)
-        x = self.input_proj(token)                        # (B, N, d_model)
+        # Input: z_0..z_{N-1} → (B, N, d_latent)
+        z_in = z_seq[:, :N, :]                                # (B, N, d_latent)
+        x = self.input_proj(z_in)                             # (B, N, d_model)
 
         # Positional encoding
         pos = torch.arange(N, device=x.device)
-        x   = x + self.pos_emb(pos)                      # (B, N, d_model)
+        x   = x + self.pos_emb(pos)
 
         # Causal transformer
         mask = self._causal_mask(N, x.device)
         for block in self.blocks:
             x = block(x, mask)
 
-        x = self.norm_out(x)                              # (B, N, d_model)
+        x = self.norm_out(x)                                  # (B, N, d_model)
 
-        # Store for regime head (used outside forward)
+        # Store for regime head
         self._last_hidden = x
 
         # GMM head
-        pi, mu, log_sig = self.gmm_head(x)               # (B,N,K), (B,N,K,D), (B,N,K,D)
+        pi, mu, log_sig = self.gmm_head(x)
 
         return pi, mu, log_sig
 
@@ -232,31 +242,22 @@ class LOBWorldModel(nn.Module):
     ) -> torch.Tensor:
         """
         Negative log-likelihood of GMM with log-sum-exp trick.
-
-        log p(z) = log Σ_k π_k * N(z | μ_k, σ_k²)
-                 = logsumexp_k [ log π_k + log N(z | μ_k, σ_k²) ]
-
-        where log N(z | μ, σ²) = -0.5 * Σ_d [ log(2π) + 2*log_σ + (z-μ)²/σ² ]
         """
         B, N, K, D = mu.shape
 
-        # Expand z_next for broadcasting: (B, N, 1, D)
-        z = z_next.unsqueeze(2)
+        z = z_next.unsqueeze(2)                                      # (B, N, 1, D)
 
-        # Log-likelihood of each component: (B, N, K)
-        sig      = torch.exp(log_sig)                            # (B, N, K, D)
+        sig      = torch.exp(log_sig)
         log_norm = -0.5 * (
             D * math.log(2 * math.pi)
-            + 2 * log_sig.sum(dim=-1)                           # (B, N, K)
-            + ((z - mu) ** 2 / (sig ** 2 + 1e-8)).sum(dim=-1)  # (B, N, K)
-        )
+            + 2 * log_sig.sum(dim=-1)
+            + ((z - mu) ** 2 / (sig ** 2 + 1e-8)).sum(dim=-1)
+        )                                                            # (B, N, K)
 
-        # log π_k + log N(z | μ_k, σ_k²): (B, N, K)
         log_pi   = torch.log(pi + 1e-8)
-        log_comp = log_pi + log_norm                            # (B, N, K)
+        log_comp = log_pi + log_norm                                 # (B, N, K)
 
-        # log-sum-exp over components: (B, N)
-        log_p = torch.logsumexp(log_comp, dim=-1)
+        log_p = torch.logsumexp(log_comp, dim=-1)                   # (B, N)
 
         return -log_p.mean()
 
@@ -264,12 +265,8 @@ class LOBWorldModel(nn.Module):
         self,
         regimes: torch.Tensor,   # (B, N) per-step regime labels
     ) -> tuple[torch.Tensor, float]:
-        """
-        Cross-entropy from auxiliary regime head on hidden states.
-        Returns (loss, accuracy).
-        """
-        h = self._last_hidden                      # (B, N, d_model)
-        logits = self.regime_head(h)               # (B, N, n_regimes)
+        h = self._last_hidden
+        logits = self.regime_head(h)
         B, N, C = logits.shape
         loss = F.cross_entropy(
             logits.reshape(B * N, C),
@@ -286,46 +283,39 @@ class LOBWorldModel(nn.Module):
         mu:      torch.Tensor,
         log_sig: torch.Tensor,
         z_next:  torch.Tensor,
-        regimes: torch.Tensor,   # (B,) — regime index per sequence
+        regimes: torch.Tensor,
     ) -> dict[str, float]:
-        """
-        Compute diagnostic metrics:
-          - nll_total   : overall NLL
-          - entropy_pi  : mean entropy of mixture weights (mode collapse check)
-          - nll_regime_* : NLL per regime
-        """
         nll_total = self.nll_loss(pi, mu, log_sig, z_next).item()
-
-        # Entropy of π: H(π) = -Σ π log π, averaged over B and N
         ent = -(pi * torch.log(pi + 1e-8)).sum(dim=-1).mean().item()
 
         diag = {"nll_total": nll_total, "entropy_pi": ent}
 
-        # NLL per regime
         B, N, K, D = mu.shape
+        reg_flat = regimes.reshape(-1)
         for reg_id in [0, 1, 2]:
-            mask = (regimes == reg_id)
+            mask = (reg_flat == reg_id)
             if mask.sum() == 0:
                 continue
-            nll_reg = self.nll_loss(
-                pi[mask], mu[mask], log_sig[mask], z_next[mask]
-            ).item()
+            pi_f = pi.reshape(B*N, K)[mask].unsqueeze(1)
+            mu_f = mu.reshape(B*N, K, D)[mask].unsqueeze(1)
+            ls_f = log_sig.reshape(B*N, K, D)[mask].unsqueeze(1)
+            zn_f = z_next.reshape(B*N, D)[mask].unsqueeze(1)
+            nll_reg = self.nll_loss(pi_f, mu_f, ls_f, zn_f).item()
             names = ["low_vol", "mid_vol", "high_vol"]
             diag[f"nll_{names[reg_id]}"] = nll_reg
 
         return diag
 
-    def encode(
+    def predict(
         self,
         z_seq: torch.Tensor,
-        a_seq: torch.Tensor,
     ) -> torch.Tensor:
         """
-        Return the hidden state at the last position — used at inference
-        to get the context embedding for DRO stress testing.
+        Return GMM means at the last position — used at inference
+        for context embedding / DRO stress testing.
         """
-        pi, mu, log_sig = self.forward(z_seq, a_seq)
-        return mu[:, -1, :, :]   # (B, K, D) — GMM means at last step
+        pi, mu, log_sig = self.forward(z_seq)
+        return mu[:, -1, :, :]   # (B, K, D)
 
 
 # ---------------------------------------------------------------------------
@@ -343,16 +333,15 @@ if __name__ == "__main__":
 
     B, N = 16, 20
     z_seq = torch.randn(B, N + 1, cfg.d_latent).to(device)
-    a_seq = torch.randn(B, N, cfg.d_action).to(device)
 
-    pi, mu, log_sig = model(z_seq, a_seq)
+    pi, mu, log_sig = model(z_seq)
     print(f"pi shape: {pi.shape}  — expected ({B}, {N}, {cfg.n_gmm})")
 
     z_next = z_seq[:, 1:, :]
     loss = model.nll_loss(pi, mu, log_sig, z_next)
     print(f"NLL loss: {loss.item():.4f}")
 
-    # Regime head test (per-step)
+    # Regime head test
     regimes = torch.randint(0, 3, (B, N)).to(device)
     reg_loss, reg_acc = model.regime_loss(regimes)
     print(f"Regime loss: {reg_loss.item():.4f}  acc: {reg_acc:.3f}")
@@ -362,7 +351,11 @@ if __name__ == "__main__":
     print(f"Backward OK  (total={total.item():.4f})")
 
     # Diagnostics
-    pi2, mu2, ls2 = model(z_seq, a_seq)
+    pi2, mu2, ls2 = model(z_seq)
     diag = model.diagnostics(pi2, mu2, ls2, z_next, regimes)
     print(f"Diagnostics: {diag}")
+
+    # Predict
+    pred = model.predict(z_seq)
+    print(f"Predict shape: {pred.shape}  — expected ({B}, {cfg.n_gmm}, {cfg.d_latent})")
     print("Tutto OK")

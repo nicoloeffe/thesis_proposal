@@ -40,7 +40,7 @@ import matplotlib.gridspec as gridspec
 import torch
 
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
 
 from models.world_model import LOBWorldModel, WorldModelConfig
@@ -1159,7 +1159,7 @@ def plot_all(metrics: dict, calib: dict, coverage: dict, crps: dict,
     ax = fig.add_subplot(gs[2, 1])
     pnll = metrics["pos_nll_mean"]
     ax.plot(range(1, len(pnll) + 1), pnll, "b-o", markersize=3)
-    ax.set_title("NLL vs sequence position (no systematic trend)")
+    ax.set_title("NLL vs sequence position (transformer uses temporal info)")
     ax.set_xlabel("Position (t)"); ax.set_ylabel("NLL")
     ax.grid(True, alpha=0.3)
 
@@ -1431,11 +1431,11 @@ if __name__ == "__main__":
     parser.add_argument("--wm_ckpt",    type=str,  default="checkpoints/wm_best.pt")
     parser.add_argument("--dataset",    type=str,  default="data/wm_dataset.npz")
     parser.add_argument("--n_samples",  type=int,  default=10_000)
-    parser.add_argument("--out",             type=str, default="eval_wm.png",
+    parser.add_argument("--out",             type=str, default="validation/world_model/eval_wm.png",
                         help="Main evaluation figure (Pannelli A-D)")
-    parser.add_argument("--out_calibration", type=str, default="eval_wm_calibration.png",
+    parser.add_argument("--out_calibration", type=str, default="validation/world_model/eval_wm_calibration.png",
                         help="Density calibration figure (Pannello E)")
-    parser.add_argument("--out_rollout",     type=str, default="eval_wm_rollout.png",
+    parser.add_argument("--out_rollout",     type=str, default="validation/world_model/eval_wm_rollout.png",
                         help="Autoregressive rollout figure (Pannello F)")
     parser.add_argument("--n_rollouts", type=int, default=500,
                         help="Number of trajectories for rollout test")
