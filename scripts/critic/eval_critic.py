@@ -50,7 +50,7 @@ import torch
 from scipy.stats import spearmanr
 
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 try:
     from models.critic import ValueNetwork
@@ -106,10 +106,12 @@ def load_data(
     g_stats:         dict | None = None,
     action_stats:    dict | None = None,
     use_actions:     bool = False,
+    z_stats:         dict | None = None,        # v3.1
 ) -> dict:
     """
     Carica dataset, costruisce stati aumentati e MC returns.
 
+    v3.1: se z_stats fornite, applica z-score per-dim al latente.
     v3: se use_actions, concatena le quote A-S normalizzate allo stato.
     """
     data = np.load(dataset_path)
@@ -122,6 +124,11 @@ def load_data(
 
     M, Np1, d_z = sequences.shape
     N = Np1 - 1
+
+    # v3.1: z-score per-dim (if z_stats provided)
+    if z_stats is not None:
+        sequences = (sequences - z_stats["mean"]) / z_stats["std"]
+        print(f"  v3.1: z normalized (per-dim z-score)")
 
     # Augmented state: [z, inv_norm, tl]
     inv_norm = np.clip(inventories / inv_max, -1.0, 1.0)[..., None]
@@ -1002,14 +1009,18 @@ def main(args: argparse.Namespace) -> None:
     is_rank = (mode == "rank")
     use_actions  = cfg.get("use_actions", False)
     action_stats = ckpt.get("action_stats")
+    z_stats      = ckpt.get("z_stats")              # v3.1
+    z_norm_flag  = cfg.get("z_norm", False)
     print(f"  reward_stats μ={reward_stats['mean']:+.6f}  σ={reward_stats['std']:.6f}")
     if g_stats is not None:
         print(f"  g_stats μ={g_stats['mean']:+.6f}  σ={g_stats['std']:.6f}  (v2)")
     if use_actions and action_stats is not None:
         print(f"  action_stats: q_max={action_stats['q_max']:.3f}  "
               f"L_levels={action_stats.get('L_levels', 10)}  (v3)")
+    if z_norm_flag and z_stats is not None:
+        print(f"  z_stats: per-dim std mean={z_stats['std'].mean():.4f}  (v3.1)")
     print(f"  gamma={gamma}  inv_max={inv_max}  mode={mode}  "
-          f"use_actions={use_actions}")
+          f"use_actions={use_actions}  z_norm={z_norm_flag}")
     if is_rank:
         print(f"  [!] RANKING CRITIC: V scale is indeterminate, "
               f"focus on ordinal metrics (Spearman, pairwise acc)")
@@ -1024,6 +1035,7 @@ def main(args: argparse.Namespace) -> None:
         g_stats=g_stats,
         action_stats=action_stats,
         use_actions=use_actions,
+        z_stats=z_stats if z_norm_flag else None,
     )
 
     # --- Section 1: Prediction quality ---
@@ -1095,7 +1107,7 @@ def main(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate Critic V_θ(s)")
-    parser.add_argument("--ckpt",     type=str, default="checkpoints/critic_best.pt")
+    parser.add_argument("--ckpt",     type=str, default="checkpoints/critic_rank/critic_best.pt")
     parser.add_argument("--dataset",  type=str, default="data/wm_dataset.npz")
     parser.add_argument("--n_samples", type=int, default=20_000,
                         help="Number of (s, G) pairs for prediction eval")

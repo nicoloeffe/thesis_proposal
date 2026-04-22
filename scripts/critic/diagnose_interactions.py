@@ -110,8 +110,9 @@ def build_dataset(
     seed:         int = 42,
     action_stats: dict | None = None,
     use_actions:  bool = False,
+    z_stats:      dict | None = None,
 ) -> dict:
-    """Costruisce (s, G, reg, inv_norm, tl) per l'analisi. v3: opzionalmente actions."""
+    """Costruisce (s, G, reg, inv_norm, tl) per l'analisi. v3.1: opzionalmente z_norm."""
     data = np.load(dataset_path)
     sequences   = data["sequences"].astype(np.float32)
     inventories = data["inventories"].astype(np.float32)
@@ -122,6 +123,11 @@ def build_dataset(
 
     M, Np1, d_z = sequences.shape
     N = Np1 - 1
+
+    # v3.1: z-score per-dim
+    if z_stats is not None:
+        sequences = (sequences - z_stats["mean"]) / z_stats["std"]
+        print(f"  v3.1: z normalized")
 
     # Stato aumentato
     inv_norm_full = np.clip(inventories / inv_max, -1.0, 1.0)
@@ -614,16 +620,21 @@ def main(args: argparse.Namespace) -> None:
     reward_stats = ckpt["reward_stats"]
     g_stats      = ckpt.get("g_stats")
     action_stats = ckpt.get("action_stats")
+    z_stats      = ckpt.get("z_stats")
     gamma        = cfg["gamma"]
     inv_max      = cfg["inv_max"]
     use_actions  = cfg.get("use_actions", False)
+    z_norm_flag  = cfg.get("z_norm", False)
 
-    print(f"gamma={gamma}  inv_max={inv_max}  use_actions={use_actions}")
+    print(f"gamma={gamma}  inv_max={inv_max}  use_actions={use_actions}  "
+          f"z_norm={z_norm_flag}")
     if g_stats is not None:
         print(f"g_stats: μ={g_stats['mean']:+.4f}  σ={g_stats['std']:.4f}")
     if use_actions and action_stats is not None:
         print(f"action_stats: q_max={action_stats['q_max']:.3f}  "
               f"L_levels={action_stats.get('L_levels', 10)}")
+    if z_norm_flag and z_stats is not None:
+        print(f"z_stats: per-dim std mean={z_stats['std'].mean():.4f}")
 
     # Build dataset
     data = build_dataset(
@@ -634,6 +645,7 @@ def main(args: argparse.Namespace) -> None:
         seed=args.seed,
         action_stats=action_stats,
         use_actions=use_actions,
+        z_stats=z_stats if z_norm_flag else None,
     )
 
     # Predict V on all samples

@@ -278,7 +278,7 @@ def main(args: argparse.Namespace) -> None:
     print(f"    perché z è l'UNICO segnale usato dal critico per inferire il regime.")
     print()
     print(f"  Confronto al critico attuale:")
-    print(f"    Critico v2.3 / v3 rank (misurato): ~0.648")
+    print(f"    Critico v2.3 / v3 rank (misurato): ~0.728")
     print(f"    Bayes floor (inv + tl + regime)  : {r2['acc']:.4f}")
     gap = r2['acc'] - 0.648
     if gap < 0.02:
