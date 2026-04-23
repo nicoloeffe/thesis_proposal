@@ -37,7 +37,7 @@ import torch
 from scipy.stats import kruskal
 
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 try:
     from models.critic import ValueNetwork
@@ -699,7 +699,7 @@ def main(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Diagnose inv × tl × regime interactions")
-    parser.add_argument("--ckpt",     type=str, default="checkpoints/critic_best.pt")
+    parser.add_argument("--ckpt",     type=str, default="checkpoints/critic_mc/critic_best.pt")
     parser.add_argument("--dataset",  type=str, default="data/wm_dataset.npz")
     parser.add_argument("--val_only", action="store_true",
                         help="Use only val split (10% episodes)")

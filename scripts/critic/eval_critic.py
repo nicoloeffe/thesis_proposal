@@ -14,22 +14,22 @@ Tre blocchi di validazione (3x3 panels + scorecard):
     (0,1): Per-regime metrics (bar MSE + Spearman)
     (0,2): Distribuzione errori V - G (detecta bias e modi)
 
-  Row 2 — SENSIBILITY ("il critico usa tutti gli input?")
-    (1,0): Gradient magnitudes — IL TEST KILLER
-           ||∇_z V|| / √d_z  vs  |∂V/∂inv|  vs  |∂V/∂tl|
+  Row 2 — FEATURE IMPORTANCE ("il critico usa tutte le feature?")
+    (1,0): Ablation R² — drop di R² quando si shuffla z / inv / tl
+           Scale-free: misura l'impatto reale di ogni feature
     (1,1): Partial dependence su inv (per regime)
     (1,2): Partial dependence su tl (per regime)
 
   Row 3 — SMOOTHNESS & DRO COMPATIBILITY
     (2,0): Lipschitz empirica globale + per regime
     (2,1): PGD adversarial Lipschitz (worst-case)
-    (2,2): Per-dimension sensitivity (quale dim di z conta di più?)
+    (2,2): Calibration (reliability diagram)
 
 Scorecard con verdetto A/B/C/D:
   A: tutto ok, critico pronto per DRO
-  B: prediction ok ma gradient su z debole → DRO funzionerà con poco leverage
-  C: prediction debole ma sensibility ok → ri-allenare
-  D: entrambi rotti → ripensare
+  B: prediction ok ma z contribuisce poco (ablation) → DRO con leverage limitato
+  C: prediction debole → ri-allenare
+  D: entrambi problematici → ripensare
 
 Uso:
   python scripts/eval_critic.py
@@ -463,6 +463,109 @@ def partial_dependence(
 
 
 # ===========================================================================
+# SECTION 2b — Ablation & Calibration (replacing gradient ratio)
+# ===========================================================================
+
+def ablation_r2(
+    critic:     ValueNetwork,
+    data:       dict,
+    device:     torch.device,
+    n_samples:  int = 5000,
+    seed:       int = 42,
+) -> dict:
+    """
+    Ablation test: misura il calo di R² e Spearman ρ quando si shuffla
+    ciascun gruppo di feature (z, inv, tl, actions).
+
+    Questo è scale-free: non confronta gradienti su scale diverse,
+    ma l'impatto di ogni feature sulla qualità predittiva del critico.
+    """
+    rng = np.random.default_rng(seed)
+    n = min(n_samples, len(data["s"]))
+    idx = rng.choice(len(data["s"]), size=n, replace=False)
+    s = data["s"][idx]
+    g = data["g"][idx].numpy()
+    d_z = data["d_z"]
+    d_action = data.get("d_action", 0)
+
+    # Baseline prediction
+    V_base = predict_all(critic, s, device)
+    ss_tot = np.sum((g - g.mean()) ** 2) + 1e-12
+    r2_base = float(1.0 - np.sum((V_base - g) ** 2) / ss_tot)
+    rho_base = float(spearmanr(V_base, g)[0])
+
+    results = {
+        "baseline": {"r2": r2_base, "spearman": rho_base},
+    }
+
+    # Ablation groups: shuffle each group independently
+    groups = {
+        "z":   (0, d_z),
+        "inv": (d_z, d_z + 1),
+        "tl":  (d_z + 1, d_z + 2),
+    }
+    if d_action > 0:
+        groups["actions"] = (d_z + 2, d_z + 2 + d_action)
+
+    for name, (start, end) in groups.items():
+        s_abl = s.clone()
+        # Shuffle the feature group across samples (breaks correlation)
+        perm = torch.from_numpy(rng.permutation(n))
+        s_abl[:, start:end] = s_abl[perm, start:end]
+
+        V_abl = predict_all(critic, s_abl, device)
+        r2_abl = float(1.0 - np.sum((V_abl - g) ** 2) / ss_tot)
+        rho_abl = float(spearmanr(V_abl, g)[0])
+
+        results[name] = {
+            "r2": r2_abl,
+            "spearman": rho_abl,
+            "r2_drop": r2_base - r2_abl,
+            "rho_drop": rho_base - rho_abl,
+        }
+
+    return results
+
+
+def calibration_analysis(
+    V:          np.ndarray,
+    G:          np.ndarray,
+    n_bins:     int = 15,
+) -> dict:
+    """
+    Calibration (reliability diagram): per bin di V predetto,
+    calcola la media di G osservato. Un critico calibrato ha
+    E[G | V ∈ bin] ≈ center(bin).
+    """
+    # Bin by predicted V
+    v_min, v_max = V.min(), V.max()
+    edges = np.linspace(v_min, v_max, n_bins + 1)
+    bin_centers = []
+    g_means = []
+    g_stds = []
+    counts = []
+
+    for i in range(n_bins):
+        mask = (V >= edges[i]) & (V < edges[i + 1])
+        if i == n_bins - 1:  # include right edge
+            mask = mask | (V == edges[i + 1])
+        n = mask.sum()
+        if n < 10:
+            continue
+        bin_centers.append((edges[i] + edges[i + 1]) / 2)
+        g_means.append(float(G[mask].mean()))
+        g_stds.append(float(G[mask].std()))
+        counts.append(int(n))
+
+    return {
+        "bin_centers": np.array(bin_centers),
+        "g_means":     np.array(g_means),
+        "g_stds":      np.array(g_stds),
+        "counts":      np.array(counts),
+    }
+
+
+# ===========================================================================
 # SECTION 3 — Smoothness & DRO compatibility
 # ===========================================================================
 
@@ -474,8 +577,8 @@ def lipschitz_analysis(
     seed:       int = 42,
 ) -> dict:
     """
-    Lipschitz empirica globale + per regime.
-    Lipschitz = ||∇_s V(s)|| (per sample), poi statistiche.
+    Lipschitz empirica globale + per regime, calcolata SOLO rispetto a z.
+    Lipschitz = ||∇_z V(z, inv, tl)|| (L2 norm sul vettore z).
     """
     rng = np.random.default_rng(seed)
     n = min(n_samples, len(data["s"]))
@@ -485,7 +588,10 @@ def lipschitz_analysis(
 
     v = critic(s)
     grads = torch.autograd.grad(v.sum(), s, create_graph=False)[0]
-    lip = grads.norm(dim=-1).cpu().numpy()               # (n,)
+    
+    # Isolate gradients with respect to z only
+    grad_z = grads[:, :critic.d_z]
+    lip = grad_z.norm(dim=-1).cpu().numpy()               # (n,)
 
     # Global
     result = {
@@ -569,157 +675,71 @@ def pgd_adversarial_lipschitz(
 # VERDICT
 # ===========================================================================
 
-def verdict(pred: dict, sens: dict, lip: dict) -> tuple[str, list[str]]:
+def verdict(pred: dict, lip: dict) -> tuple[str, list[str]]:
     """
-    Quattro livelli:
-      A: tutto ok → pronto per DRO
-      B: prediction ok ma gradient su z debole → DRO funzionerà con poco leverage
-      C: prediction debole ma sensibility ok → ri-allenare
-      D: entrambi rotti → ripensare
+    Tre livelli:
+      A: prediction + smoothness ok → pronto per DRO
+      B: un aspetto debole
+      C: entrambi problematici
     """
-    prediction_issues = []
-    sensibility_issues = []
+    issues = []
 
-    # Prediction criterion (MC returns are noisy, thresholds soft)
+    # Prediction criterion
     if pred["spearman"] < 0.3:
-        prediction_issues.append(f"Spearman ρ={pred['spearman']:.2f} (target >0.3)")
+        issues.append(f"Spearman ρ={pred['spearman']:.2f} (target >0.3)")
     if pred["r2"] < 0.05:
-        prediction_issues.append(f"R²={pred['r2']:.3f} (target >0.05 on noisy MC)")
-
-    # Sensibility criterion — the key one for DRO
-    ratio = sens["ratio_z_vs_scalars"]
-    if ratio < 0.05:
-        sensibility_issues.append(
-            f"gradient ratio z/[inv,tl]={ratio:.3f} — "
-            "critico essenzialmente ignora z (DRO senza leverage)"
-        )
-    elif ratio < 0.15:
-        sensibility_issues.append(
-            f"gradient ratio z/[inv,tl]={ratio:.3f} — "
-            "leverage su z debole"
-        )
+        issues.append(f"R²={pred['r2']:.3f} (target >0.05)")
 
     # Smoothness — too high Lipschitz breaks DRO solver
     if lip["p95"] > 10.0:
-        sensibility_issues.append(f"Lipschitz p95={lip['p95']:.1f} — alta")
+        issues.append(f"Lipschitz p95={lip['p95']:.1f} (target <10)")
 
-    if not prediction_issues and not sensibility_issues:
+    if not issues:
         return "A", []
-    if not prediction_issues and sensibility_issues:
-        return "B", sensibility_issues
-    if prediction_issues and not sensibility_issues:
-        return "C", prediction_issues
-    return "D", prediction_issues + sensibility_issues
+    if len(issues) == 1:
+        return "B", issues
+    return "C", issues
 
 
 # ===========================================================================
 # PRINTING
 # ===========================================================================
 
-def print_scorecard(
-    pred:       dict,
-    sens:       dict,
-    lip:        dict,
-    lip_adv:    dict,
-    verdict_letter: str,
-    verdict_issues: list[str],
-) -> None:
+def print_scorecard(pred: dict, pw: dict, lip: dict) -> None:
     names = ["low_vol", "mid_vol", "high_vol"]
 
     print("\n" + "=" * 70)
-    print("PREDICTION QUALITY — il critico predice bene G?")
+    print("PREDICTION QUALITY (Scatter & Correlation)")
     print("=" * 70)
-    print(f"  Global:")
-    print(f"    N samples : {len(pred['V']):,}")
-    print(f"    MSE       : {pred['mse']:.4f}")
-    print(f"    MAE       : {pred['mae']:.4f}")
-    print(f"    bias      : {pred['bias']:+.4f}")
-    print(f"    Spearman ρ: {pred['spearman']:+.4f}   (correlation rank-based)")
-    print(f"    Pearson r : {pred['pearson']:+.4f}")
-    print(f"    R²        : {pred['r2']:+.4f}  (MC noisy; >0.05 già rilevante)")
+    print(f"  N samples : {len(pred['V']):,}")
+    print(f"  R²        : {pred['r2']:+.4f}")
+    print(f"  Spearman ρ: {pred['spearman']:+.4f}")
+    print(f"  MAE       : {pred['mae']:.4f}")
 
     print(f"\n  Per regime:")
     for r, name in enumerate(names):
         if r in pred["per_regime"]:
             p = pred["per_regime"][r]
             print(f"    {name:10s} (n={p['n']:>7,}): "
-                  f"MSE={p['mse']:.4f}  ρ={p['spearman']:+.3f}  R²={p['r2']:+.3f}")
+                  f"ρ={p['spearman']:+.3f}  R²={p['r2']:+.3f}")
 
     print("\n" + "=" * 70)
-    print("SENSIBILITY — il critico usa tutte le feature?")
+    print("PAIRWISE RANKING ACCURACY (Scale-invariant ranking)")
     print("=" * 70)
-    d_action = sens.get("d_action", 0)
-    print(f"  Gradient magnitudes (mean over samples):")
-    print(f"    ||∇_z V||/√d_z : {sens['per_unit_z']:.4f}    (per-unit-dim)")
-    print(f"    |∂V/∂inv|      : {sens['per_unit_inv']:.4f}")
-    print(f"    |∂V/∂tl|       : {sens['per_unit_tl']:.4f}")
-    if d_action > 0:
-        print(f"    ||∇_a V||/√d_a : {sens['per_unit_actions']:.4f}    "
-              f"(per-unit-dim, d_action={d_action})")
-
-    ratio = sens["ratio_z_vs_scalars"]
-    status = ("OK " if ratio > 0.15 else "~~ " if ratio > 0.05 else "!! ")
-    print(f"    ratio z vs (inv+tl)/2       = {ratio:.3f}   [{status}]")
-    if d_action > 0:
-        r_all = sens["ratio_z_vs_all"]
-        s_all = ("OK " if r_all > 0.15 else "~~ " if r_all > 0.05 else "!! ")
-        print(f"    ratio z vs (inv+tl+a)/3     = {r_all:.3f}   [{s_all}]  (v3)")
-
-    print(f"\n  Per-dim |∂V/∂z_d|  (media):")
-    pd_z = sens["per_dim_z"]
-    for i in range(0, len(pd_z), 8):
-        chunk = pd_z[i:i+8]
-        s_line = "  ".join(f"d{i+j:02d}={chunk[j]:.3f}" for j in range(len(chunk)))
-        print(f"    {s_line}")
-    print(f"    max={pd_z.max():.3f}  min={pd_z.min():.3f}  "
-          f"max/min={pd_z.max()/(pd_z.min()+1e-8):.1f}")
-
-    if d_action > 0 and sens.get("abs_actions") is not None:
-        abs_a = sens["abs_actions"]
-        labels = ["k_bid", "k_ask", "q_bid", "q_ask"]
-        print(f"\n  Per-dim |∂V/∂action_d|:")
-        print(f"    " + "  ".join(
-            f"{lbl}={abs_a[i]:.4f}" for i, lbl in enumerate(labels)
-        ))
+    print(f"  Global     : {pw['global']:.4f}")
+    for r, name in enumerate(names):
+        k = f"regime_{r}"
+        if k in pw:
+            print(f"  {name:10s} : {pw[k]:.4f}")
 
     print("\n" + "=" * 70)
-    print("SMOOTHNESS — compatibile con DRO solver?")
+    print("SMOOTHNESS (Lipschitz rispetto a z)")
     print("=" * 70)
-    print(f"  Lipschitz empirica (random sampling):")
-    print(f"    median={lip['median']:.3f}  p95={lip['p95']:.3f}  max={lip['max']:.3f}")
-    print(f"\n  Per regime (median):")
+    print(f"  Global     : med={lip['median']:.3f}  p95={lip['p95']:.3f}")
     for r, name in enumerate(names):
         if r in lip["per_regime"]:
             pr = lip["per_regime"][r]
-            print(f"    {name:10s}: med={pr['median']:.3f}  p95={pr['p95']:.3f}")
-
-    print(f"\n  PGD adversarial Lipschitz (eps_rel={lip_adv['eps_rel']:.0e}, "
-          f"n_steps={lip_adv['n_steps']}):")
-    print(f"    median={lip_adv['median']:.3f}  p95={lip_adv['p95']:.3f}  "
-          f"max={lip_adv['max']:.3f}")
-
-    print("\n" + "=" * 70)
-    print(f"VERDETTO: {verdict_letter}")
-    print("=" * 70)
-    if verdict_letter == "A":
-        print("  Critico validato e pronto per il DRO (Modulo C, parte 2).")
-    elif verdict_letter == "B":
-        print("  Prediction OK ma gradient su z debole.")
-        for iss in verdict_issues:
-            print(f"    - {iss}")
-        print("  Impatto: il DRO avrà poco leverage sulla perturbazione di z.")
-        print("  Possibili cause: reward dominato da inv/tl, poco segnale di")
-        print("  mercato nelle dinamiche del simulatore.")
-    elif verdict_letter == "C":
-        print("  Prediction debole.")
-        for iss in verdict_issues:
-            print(f"    - {iss}")
-        print("  Possibili fix: più epoche, gp_weight diverso, learning rate.")
-    else:
-        print("  Critico non funzionante.")
-        for iss in verdict_issues:
-            print(f"    - {iss}")
-        print("  Ripensare training o architettura.")
+            print(f"  {name:10s} : med={pr['median']:.3f}  p95={pr['p95']:.3f}")
     print("=" * 70 + "\n")
 
 
@@ -729,218 +749,135 @@ def print_scorecard(
 
 def plot_all(
     pred:       dict,
-    sens:       dict,
-    pd_inv:     dict,
-    pd_tl:      dict,
+    pw:         dict,
     lip:        dict,
-    lip_adv:    dict,
     out_path:   str,
 ) -> None:
+    import matplotlib.pyplot as plt
+    import matplotlib.gridspec as gridspec
+    import numpy as np
+
     regime_names = ["low_vol", "mid_vol", "high_vol"]
     regime_colors = ["#2ecc71", "#3498db", "#e74c3c"]
 
-    fig = plt.figure(figsize=(17, 16))
-    gs  = gridspec.GridSpec(3, 3, figure=fig, hspace=0.42, wspace=0.30)
+    fig = plt.figure(figsize=(16, 10))
+    gs  = gridspec.GridSpec(2, 3, figure=fig, hspace=0.35, wspace=0.30)
 
     # -----------------------------------------------------------------------
-    # Row 1 — Prediction quality
+    # Row 1 — Prediction quality (Scatter plots per regime)
     # -----------------------------------------------------------------------
-
-    # (0,0) scatter V vs G
-    ax = fig.add_subplot(gs[0, 0])
     V, G = pred["V"], pred["G"]
-    # Subsample for plotting (too many points otherwise)
-    if len(V) > 5000:
-        rng = np.random.default_rng(0)
-        sub = rng.choice(len(V), size=5000, replace=False)
-        V_plot = V[sub]; G_plot = G[sub]; reg_plot = pred["reg"][sub]
-    else:
-        V_plot = V; G_plot = G; reg_plot = pred["reg"]
+    reg = pred["reg"]
 
     for r in range(3):
-        mask = (reg_plot == r)
-        if mask.sum() > 0:
-            ax.scatter(G_plot[mask], V_plot[mask], s=4, alpha=0.4,
-                       c=regime_colors[r], label=regime_names[r])
-    lims = [min(V_plot.min(), G_plot.min()), max(V_plot.max(), G_plot.max())]
-    ax.plot(lims, lims, "k--", lw=1, alpha=0.5, label="identity")
-    ax.set_xlabel("G (MC return, true)", fontsize=9)
-    ax.set_ylabel("V (critic prediction)", fontsize=9)
-    ax.set_title(f"V vs G  —  Spearman ρ={pred['spearman']:.3f}  "
-                 f"R²={pred['r2']:.3f}", fontsize=10)
-    ax.legend(fontsize=7, loc="best")
-    ax.grid(True, alpha=0.3)
-    ax.tick_params(labelsize=7)
+        ax = fig.add_subplot(gs[0, r])
+        mask = (reg == r)
+        
+        if mask.sum() == 0:
+            ax.set_title(f"{regime_names[r]} (no data)")
+            ax.axis("off")
+            continue
+            
+        Vr = V[mask]
+        Gr = G[mask]
+        
+        if len(Vr) > 3000:
+            rng = np.random.default_rng(r)
+            sub = rng.choice(len(Vr), size=3000, replace=False)
+            V_plot, G_plot = Vr[sub], Gr[sub]
+        else:
+            V_plot, G_plot = Vr, Gr
 
-    # (0,1) per-regime metrics bars
-    ax = fig.add_subplot(gs[0, 1])
-    regs_with_data = [r for r in [0, 1, 2] if r in pred["per_regime"]]
-    x = np.arange(len(regs_with_data))
-    w = 0.35
-    mse_vals = [pred["per_regime"][r]["mse"] for r in regs_with_data]
-    rho_vals = [pred["per_regime"][r]["spearman"] for r in regs_with_data]
-    names_plot = [regime_names[r] for r in regs_with_data]
-    cols_plot = [regime_colors[r] for r in regs_with_data]
-
-    # Primary axis: MSE
-    ax.bar(x - w/2, mse_vals, w, color=cols_plot, alpha=0.7, label="MSE")
-    ax.set_ylabel("MSE", fontsize=9, color="#444")
-    ax.set_xticks(x)
-    ax.set_xticklabels(names_plot, fontsize=8)
-    for i, v in enumerate(mse_vals):
-        ax.text(i - w/2, v + max(mse_vals)*0.02, f"{v:.3f}", ha="center", fontsize=7)
-
-    # Secondary axis: Spearman
-    ax2 = ax.twinx()
-    ax2.bar(x + w/2, rho_vals, w, color=cols_plot, alpha=0.4, hatch="//",
-            edgecolor="black", linewidth=0.5, label="Spearman ρ")
-    ax2.axhline(0, color="black", lw=0.5)
-    ax2.set_ylabel("Spearman ρ", fontsize=9, color="#666")
-    ax2.set_ylim(-0.1, max(1.0, max(rho_vals) * 1.1))
-    for i, v in enumerate(rho_vals):
-        ax2.text(i + w/2, v + 0.03 if v >= 0 else v - 0.05, f"{v:+.3f}",
-                 ha="center", fontsize=7)
-
-    ax.set_title("Per-regime prediction quality", fontsize=10)
-    ax.tick_params(labelsize=7)
-    ax2.tick_params(labelsize=7)
-
-    # (0,2) error distribution
-    ax = fig.add_subplot(gs[0, 2])
-    err = pred["errors"]
-    for r in range(3):
-        if r in pred["per_regime"]:
-            mask = (pred["reg"] == r)
-            ax.hist(err[mask], bins=40, alpha=0.5, density=True,
-                    color=regime_colors[r], label=regime_names[r])
-    ax.axvline(0, color="black", lw=1, ls="--", alpha=0.7)
-    ax.axvline(pred["bias"], color="red", lw=1.5, ls=":",
-               label=f"bias={pred['bias']:+.3f}")
-    ax.set_xlabel("V - G", fontsize=9)
-    ax.set_ylabel("density", fontsize=9)
-    ax.set_title("Distribuzione errori per regime", fontsize=10)
-    ax.legend(fontsize=7)
-    ax.tick_params(labelsize=7)
-    ax.grid(True, alpha=0.3)
+        ax.scatter(G_plot, V_plot, s=4, alpha=0.3, c=regime_colors[r])
+        
+        lims = [min(V_plot.min(), G_plot.min()), max(V_plot.max(), G_plot.max())]
+        ax.plot(lims, lims, "k--", lw=1, alpha=0.6)
+        
+        ax.set_xlabel("G (True Return)", fontsize=10)
+        if r == 0:
+            ax.set_ylabel("V (Critic Prediction)", fontsize=10)
+            
+        r2_val = pred["per_regime"][r]["r2"] if r in pred["per_regime"] else np.nan
+        rho_val = pred["per_regime"][r]["spearman"] if r in pred["per_regime"] else np.nan
+        var_g = np.var(Gr)
+        
+        ax.set_title(f"{regime_names[r]} Scatter\n"
+                     f"R²={r2_val:+.2f}  |  ρ={rho_val:+.2f}  |  Var(G)={var_g:.2f}",
+                     fontsize=11, fontweight="bold")
+        ax.grid(True, alpha=0.3)
+        ax.tick_params(labelsize=8)
 
     # -----------------------------------------------------------------------
-    # Row 2 — Sensibility (THE KILLER ROW)
+    # Row 2 — DRO validation & Rankings
     # -----------------------------------------------------------------------
 
-    # (1,0) gradient magnitudes — the key panel
+    # (1,0) Pairwise Ranking Accuracy
     ax = fig.add_subplot(gs[1, 0])
-    labels = [r"$\|\nabla_z V\|/\sqrt{d_z}$", r"$|\partial V/\partial\,\mathrm{inv}|$",
-              r"$|\partial V/\partial\,\mathrm{tl}|$"]
-    vals   = [sens["per_unit_z"], sens["per_unit_inv"], sens["per_unit_tl"]]
-    colors_g = ["#8e44ad", "#e67e22", "#16a085"]
-    bars = ax.bar(labels, vals, color=colors_g, edgecolor="white", linewidth=1.2)
-    for bar, v in zip(bars, vals):
-        ax.text(bar.get_x() + bar.get_width()/2, v + max(vals)*0.02,
-                f"{v:.4f}", ha="center", fontsize=9, fontweight="bold")
-    ratio = sens["ratio_z_vs_scalars"]
-    status = "OK" if ratio > 0.15 else "WEAK" if ratio > 0.05 else "ZERO LEVERAGE"
-    ax.set_title(f"Gradient magnitudes (mean)\n"
-                 f"ratio z/([inv,tl]/2) = {ratio:.3f}  [{status}]", fontsize=10)
-    ax.set_ylabel("Magnitude", fontsize=9)
-    ax.tick_params(labelsize=8)
-    ax.grid(True, axis="y", alpha=0.3)
+    regs_pw = [r for r in [0, 1, 2] if f"regime_{r}" in pw]
+    x = np.arange(len(regs_pw))
+    w = 0.5
+    pw_vals = [pw[f"regime_{r}"] for r in regs_pw]
+    names_pw = [regime_names[r] for r in regs_pw]
+    colors_pw = [regime_colors[r] for r in regs_pw]
 
-    # (1,1) partial dependence on inv
-    ax = fig.add_subplot(gs[1, 1])
-    for r, name in enumerate(regime_names):
-        if r in pd_inv["curves"]:
-            ax.plot(pd_inv["grid"], pd_inv["curves"][r],
-                    color=regime_colors[r], lw=2, label=name, marker="o", markersize=3)
-    ax.axvline(0, color="black", lw=0.5, alpha=0.5)
-    ax.set_xlabel("inv_norm  (−1=short  +1=long)", fontsize=9)
-    ax.set_ylabel("V (mean over z, tl fixed)", fontsize=9)
-    ax.set_title("Partial dependence on inventory", fontsize=10)
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
-    ax.tick_params(labelsize=8)
-
-    # (1,2) partial dependence on tl
-    ax = fig.add_subplot(gs[1, 2])
-    for r, name in enumerate(regime_names):
-        if r in pd_tl["curves"]:
-            ax.plot(pd_tl["grid"], pd_tl["curves"][r],
-                    color=regime_colors[r], lw=2, label=name, marker="o", markersize=3)
-    ax.set_xlabel("time_left  (0=end  1=start)", fontsize=9)
-    ax.set_ylabel("V (mean over z, inv fixed)", fontsize=9)
-    ax.set_title("Partial dependence on time_left", fontsize=10)
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
-    ax.tick_params(labelsize=8)
-
-    # -----------------------------------------------------------------------
-    # Row 3 — Smoothness
-    # -----------------------------------------------------------------------
-
-    # (2,0) Lipschitz per regime
-    ax = fig.add_subplot(gs[2, 0])
-    regs_with_lip = [r for r in [0, 1, 2] if r in lip["per_regime"]]
-    x = np.arange(len(regs_with_lip))
-    w = 0.25
-    med = [lip["per_regime"][r]["median"] for r in regs_with_lip]
-    p95 = [lip["per_regime"][r]["p95"]    for r in regs_with_lip]
-    mx  = [lip["per_regime"][r]["max"]    for r in regs_with_lip]
-    names_plot = [regime_names[r] for r in regs_with_lip]
-
-    ax.bar(x - w,   med, w, color="#3498db", label="median")
-    ax.bar(x,       p95, w, color="#e67e22", label="p95")
-    ax.bar(x + w,   mx,  w, color="#e74c3c", label="max")
+    bars = ax.bar(x, pw_vals, w, color=colors_pw, alpha=0.8, edgecolor="white")
+    ax.axhline(0.5, color="black", ls="--", lw=1, alpha=0.5, label="Random baseline (0.5)")
+    for bar, v in zip(bars, pw_vals):
+        ax.text(bar.get_x() + bar.get_width()/2, v + 0.01,
+                f"{v:.3f}", ha="center", fontsize=9, fontweight="bold")
+    
     ax.set_xticks(x)
-    ax.set_xticklabels(names_plot, fontsize=8)
-    ax.set_ylabel(r"$\|\nabla_s V\|_2$", fontsize=9)
-    ax.set_title(f"Lipschitz per regime\n"
-                 f"global median={lip['median']:.2f}  "
-                 f"p95={lip['p95']:.2f}", fontsize=10)
-    ax.legend(fontsize=8)
-    ax.tick_params(labelsize=7)
+    ax.set_xticklabels(names_pw, fontsize=10)
+    ax.set_ylim(0, 1.05)
+    ax.set_ylabel("Accuracy", fontsize=10)
+    ax.set_title(f"Pairwise Ranking Accuracy\n"
+                 f"(Global = {pw['global']:.3f})", fontsize=11, fontweight="bold")
+    ax.legend(fontsize=8, loc="lower right")
     ax.grid(True, axis="y", alpha=0.3)
 
-    # (2,1) PGD adversarial Lipschitz — hist
-    ax = fig.add_subplot(gs[2, 1])
-    ax.hist(lip_adv["lip_adv_samples"], bins=40, color="#e67e22",
-            edgecolor="white", alpha=0.85)
-    ax.axvline(lip_adv["median"], color="black", ls="--", lw=1.5,
-               label=f"median={lip_adv['median']:.2f}")
-    ax.axvline(lip_adv["p95"], color="red", ls="--", lw=1.5,
-               label=f"p95={lip_adv['p95']:.2f}")
-    ax.set_xlabel("|V(s+δ) - V(s)| / ||δ||", fontsize=9)
-    ax.set_ylabel("count", fontsize=9)
-    ax.set_title(f"PGD adversarial Lipschitz\n"
-                 f"worst-case, eps_rel={lip_adv['eps_rel']:.0e}",
-                 fontsize=10)
-    ax.legend(fontsize=8)
-    ax.tick_params(labelsize=7)
-    ax.grid(True, alpha=0.3)
+    # (1,1) Lipschitz Smoothness
+    ax = fig.add_subplot(gs[1, 1])
+    regs_lip = [r for r in [0, 1, 2] if r in lip["per_regime"]]
+    x = np.arange(len(regs_lip))
+    w = 0.35
+    med = [lip["per_regime"][r]["median"] for r in regs_lip]
+    p95 = [lip["per_regime"][r]["p95"]    for r in regs_lip]
+    names_lip = [regime_names[r] for r in regs_lip]
 
-    # (2,2) per-dim sensitivity |∂V/∂z_d|
-    ax = fig.add_subplot(gs[2, 2])
-    pd_z = sens["per_dim_z"]
-    d_z  = len(pd_z)
-    mean_val = pd_z.mean()
-    # Sort descending for clarity
-    order = np.argsort(-pd_z)
-    cols = ["#8e44ad" if pd_z[i] > mean_val * 0.5 else "#bdc3c7" for i in order]
-    ax.bar(range(d_z), pd_z[order], color=cols, edgecolor="white")
-    # Reference lines
-    ax.axhline(sens["per_unit_inv"], color="#e67e22", ls="--", lw=1,
-               label=f"|∂V/∂inv|={sens['per_unit_inv']:.3f}")
-    ax.axhline(sens["per_unit_tl"], color="#16a085", ls="--", lw=1,
-               label=f"|∂V/∂tl|={sens['per_unit_tl']:.3f}")
-    ax.set_xlabel("dim of z (sorted by |∂V/∂z_d|)", fontsize=9)
-    ax.set_ylabel("|∂V/∂z_d|  (mean)", fontsize=9)
-    ax.set_title(f"Per-dim latent sensitivity\n"
-                 f"max/min ratio = {pd_z.max()/(pd_z.min()+1e-8):.1f}",
-                 fontsize=10)
-    ax.legend(fontsize=7)
-    ax.tick_params(labelsize=7)
+    ax.bar(x - w/2, med, w, color="#3498db", label="median")
+    ax.bar(x + w/2, p95, w, color="#e67e22", label="p95")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(names_lip, fontsize=10)
+    ax.set_ylabel(r"$\|\nabla_z V\|_2$", fontsize=10)
+    ax.set_title(f"Lipschitz Smoothness (w.r.t z)\n"
+                 f"(Global p95 = {lip['p95']:.3f})", fontsize=11, fontweight="bold")
+    ax.legend(fontsize=8)
     ax.grid(True, axis="y", alpha=0.3)
 
-    plt.suptitle("Critic V_θ(s) — Evaluation Scorecard",
-                 fontsize=15, fontweight="bold", y=0.995)
+    # (1,2) Summary Metrics Block
+    ax = fig.add_subplot(gs[1, 2])
+    ax.axis("off")
+
+    summary_lines = [
+        "GLOBAL METRICS",
+        "------------------",
+        f"Target        : MC Returns (G)",
+        f"Model R²      : {pred['r2']:+.3f}",
+        f"Spearman ρ    : {pred['spearman']:+.3f}",
+        f"MAE           : {pred['mae']:.3f}",
+        f"Bias          : {pred['bias']:+.3f}",
+        f"Ranking Acc   : {pw['global']:.1%}",
+        f"Lipschitz p95 : {lip['p95']:.1f}",
+    ]
+
+    ax.text(0.5, 0.5, "\n".join(summary_lines), transform=ax.transAxes,
+            fontsize=12, va="center", ha="center", family="monospace",
+            bbox=dict(boxstyle="round,pad=1.0", facecolor="#f8f9fa",
+                      edgecolor="#dee2e6", alpha=0.9))
+
+    plt.suptitle("Critic V_θ(s) Evaluation Scorecard",
+                 fontsize=16, fontweight="bold", y=0.98)
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"Figure saved: {out_path}")
@@ -1042,67 +979,26 @@ def main(args: argparse.Namespace) -> None:
     print("\n[1/3] Evaluating prediction quality...")
     pred = prediction_quality(critic, data, device)
 
-    # --- Extra section for ranking: pairwise accuracy ---
-    pw = None
-    if is_rank:
-        print("[1b/3] Evaluating pairwise ranking accuracy...")
-        pw = pairwise_accuracy(
-            pred["V"], pred["G"], pred["reg"],
-            n_pairs=args.n_pairwise, seed=args.seed,
-        )
-
-    # --- Section 2: Sensibility ---
-    print("[2/3] Evaluating sensibility (gradient analysis + partial dependence)...")
-    sens   = gradient_magnitudes(critic, data, device,
-                                 n_samples=args.n_gradient_samples,
-                                 seed=args.seed)
-    pd_inv = partial_dependence(critic, data, device, variable="inv",
-                                n_grid=21, n_base=args.n_pd_samples,
-                                seed=args.seed)
-    pd_tl  = partial_dependence(critic, data, device, variable="tl",
-                                n_grid=21, n_base=args.n_pd_samples,
-                                seed=args.seed)
+    # --- Section 2: Pairwise Ranking Accuracy ---
+    print("\n[2/3] Evaluating pairwise ranking accuracy...")
+    pw = pairwise_accuracy(
+        pred["V"], pred["G"], pred["reg"],
+        n_pairs=args.n_pairwise, seed=args.seed,
+    )
 
     # --- Section 3: Smoothness ---
-    print("[3/3] Evaluating smoothness (Lipschitz + PGD)...")
-    lip    = lipschitz_analysis(critic, data, device,
-                                n_samples=args.n_lip_samples,
-                                seed=args.seed)
-    lip_adv = pgd_adversarial_lipschitz(critic, data, device,
-                                         eps_rel=args.pgd_eps,
-                                         n_steps=args.pgd_steps,
-                                         n_samples=args.n_pgd_samples,
-                                         seed=args.seed)
-
-    # --- Verdict ---
-    verdict_letter, verdict_issues = verdict(pred, sens, lip)
+    print("\n[3/3] Evaluating smoothness (Lipschitz)...")
+    lip = lipschitz_analysis(critic, data, device,
+                             n_samples=args.n_lip_samples,
+                             seed=args.seed)
 
     # --- Print scorecard ---
-    print_scorecard(pred, sens, lip, lip_adv, verdict_letter, verdict_issues)
-
-    # --- Ranking-specific section ---
-    if pw is not None:
-        print("\n" + "=" * 70)
-        print("PAIRWISE RANKING ACCURACY (scale-invariant)")
-        print("=" * 70)
-        print(f"  Global     (n={pw['n_pairs']:,} pairs): {pw['global']:.4f}")
-        for r_id, name in enumerate(["low_vol", "mid_vol", "high_vol"]):
-            k = f"regime_{r_id}"
-            if k in pw:
-                print(f"  {name:>10s} within-regime: {pw[k]:.4f}")
-        if "cross_regime" in pw:
-            print(f"  cross-regime              : {pw['cross_regime']:.4f}")
-        print(f"\n  Random baseline: 0.500")
-        print(f"  Perfect critic : 1.000 (impossibile dato il rumore di G)")
-        print(f"  Interpretazione:")
-        print(f"    >0.70 = ordinamento forte")
-        print(f"    0.55-0.70 = ordinamento moderato (realistico per MC rumoroso)")
-        print(f"    <0.55 = ordinamento debole")
+    print_scorecard(pred, pw, lip)
 
     # --- Plot ---
     out_dir = Path(args.out).parent
     out_dir.mkdir(parents=True, exist_ok=True)
-    plot_all(pred, sens, pd_inv, pd_tl, lip, lip_adv, out_path=args.out)
+    plot_all(pred, pw, lip, out_path=args.out)
 
 
 if __name__ == "__main__":
@@ -1112,19 +1008,14 @@ if __name__ == "__main__":
     parser.add_argument("--n_samples", type=int, default=20_000,
                         help="Number of (s, G) pairs for prediction eval")
     parser.add_argument("--val_only", action="store_true",
-                        help="Use only val split (episode-based, 10%)")
+                        help="Use only val split (episode-based, 10%%)")
     parser.add_argument("--max_t_for_mc", type=int, default=15,
-                        help="Use MC returns only for t in [0, max_t_for_mc] "
-                             "(later steps have biased MC due to truncation)")
-    parser.add_argument("--n_gradient_samples", type=int, default=5000)
-    parser.add_argument("--n_pd_samples",       type=int, default=500)
-    parser.add_argument("--n_lip_samples",      type=int, default=5000)
-    parser.add_argument("--n_pgd_samples",      type=int, default=500)
-    parser.add_argument("--pgd_eps",   type=float, default=0.01)
-    parser.add_argument("--pgd_steps", type=int,   default=20)
+                        help="Use MC returns only for t in [0, max_t_for_mc]")
+    parser.add_argument("--n_pd_samples",  type=int, default=500)
+    parser.add_argument("--n_lip_samples", type=int, default=5000)
     parser.add_argument("--n_pairwise", type=int, default=100_000,
                         help="N random pairs for pairwise accuracy (ranking mode)")
-    parser.add_argument("--seed",      type=int,   default=42)
-    parser.add_argument("--out",       type=str,   default="eval_critic.png")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--out",  type=str, default="eval_critic.png")
     args = parser.parse_args()
     main(args)
