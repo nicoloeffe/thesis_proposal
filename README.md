@@ -1,105 +1,210 @@
-# LOB representation experiments
+# Predictive information geometry in Limit Order Book representations
 
-Repository for the LOBench representation-learning study and the frozen
-Experiment 01 analyses. The obsolete top-level `legacy/` tree was removed on
-2026-08-24; active code has no import dependency on it.
+This repository studies a question that ordinary downstream accuracy does not
+answer: **when two encoders preserve predictive information, do they make that
+information equally accessible to a finite-sample reader?**
 
-The authoritative operational and scientific status is
-[PROJECT_STATE.md](PROJECT_STATE.md). Historical reports remain available for
-audit, but they should not be used as current workspace inventories.
+Experiment 01 compares supervised, horizon-JEPA and masked-JEPA encoders on
+Limit Order Book (LOB) sequences. The encoders are frozen and evaluated across
+three independent seeds. The central result is not that horizon-JEPA contains
+no directional information. Rather, its directional signal is organized in a
+geometry that is poorly aligned with leading-variance directions, fragile to
+temporal averaging, and more expensive to recover with limited labels.
 
-External reviewers should start with the tracked
-[results package](docs/results/README.md) and
-[reproducibility guide](docs/REPRODUCIBILITY.md).
+The repository contains the frozen protocol, implementation, tests, compact
+result package and manifests needed to audit that claim. Large datasets,
+feature bundles and checkpoints are distributed separately.
 
-## Active layout
+## Scientific question
 
-```text
-experiment01/                         Experiment 01 implementation
-experiment01/historical/              corrected post-P0 reproduction stack
-models/model_tokenizer_t.py           shared encoder architecture
-training/                             active encoder training entrypoints
-scripts/dataset/                      canonical processed-dataset builder
-scripts/evaluation/                   evaluation and orchestration utilities
-scripts/experiment01/                 Experiment 01 command-line entrypoints
-tests/                                active regression/compliance suite
-docs/                                 protocols, historical snapshots and notes
-```
+For a history $\mathcal H_t$, a token-preserving encoder produces
 
-`experiment01/legacy.py` and `experiment01/phase2_legacy.py` are deliberately
-retained historical-reproduction modules. Their names describe protocol
-compatibility; they do not refer to the deleted directory.
+$$
+G_t=f_\theta(\mathcal H_t)\in\mathbb R^{K\times S\times d},
+\qquad Z_t^{(P)}=P(G_t)\in\mathbb R^D,
+$$
 
-`training/historical/` contains checkpoint-compatible pre-fix definitions used
-by historical evaluation scripts. Current training entrypoints remain directly
-under `training/`.
+where $P$ is an explicit readout such as the final token grid or a temporal
+mean. The project separates three objects that are often conflated:
 
-## Current frozen assets
+$$
+\text{predictive content}
+\;\neq\;
+\text{content preserved by a readout}
+\;\neq\;
+\text{finite-sample accessibility}.
+$$
 
-| asset | path | status |
+Predictive content asks what can be decoded from a representation with a rich
+reader and large sample. Readout preservation asks what survives the map
+$G\mapsto Z^{(P)}$. Accessibility asks how much performance can be recovered
+under a declared budget of labels, dimensions, regularization and reader
+capacity. In this experiment it is therefore a curve
+$A_{P,\mathcal Q,\lambda}(m,n)$, not an intrinsic scalar property of an
+encoder.
+
+The working hypothesis was that a predictive latent objective can preserve a
+useful variable while allocating it to directions that are statistically
+unfavourable to common downstream readers. Experiment 01 tests the observable
+consequences of that hypothesis; it does not claim to identify a causal
+training mechanism.
+
+### Why representation geometry can matter
+
+If $A$ is invertible, $Z$ and $AZ$ contain the same information for an
+unrestricted decoder. Their covariance spectra, leading principal subspaces
+and the penalty induced by an isotropic ridge prior can nevertheless be very
+different. Consequently, equal predictive content does not imply equal
+performance for a dimension-limited or finite-sample reader. The experiment
+measures this operational difference rather than treating probe accuracy as a
+direct estimate of total information.
+
+### Encoder objectives
+
+- **Supervised:** the encoder and task head are optimized directly against the
+  declared future LOB targets.
+- **Horizon-JEPA:** a context representation predicts target-encoder latents at
+  future positions, without direct optimization against the evaluation target
+  blocks.
+- **Masked-JEPA:** the predictive objective reconstructs masked latent content
+  and acts as a second self-supervised control.
+
+The backbone and token grid are shared to the extent required by the frozen
+multiseed protocol; downstream comparisons discard the supervised task head
+and operate on encoder representations.
+
+## Experimental design
+
+- **Data:** seven LOB instruments and 8,039,246 ordered endpoints.
+- **Encoders:** supervised, horizon-JEPA and masked-JEPA, with seeds 0, 1 and 2.
+- **Primary readout:** `last_concat512`, the four token roles at the final time
+  position.
+- **Secondary readout:** `meanK_concatS`, a temporal mean used to test pooling
+  sensitivity.
+- **Targets:** directional variables are primary; volatility and timing are
+  separate specificity controls. Directional targets include changes in
+  spread, microprice and top-level imbalance across multiple horizons.
+- **Splits:** complete stock-days, with train, validation and test disjoint by
+  canonical identity `(stock_id, trading_date)`.
+- **Selection:** hyperparameters are chosen on validation; the fixed test set is
+  used only for final evaluation.
+
+The supervised versus horizon-JEPA contrast is primary. Masked-JEPA remains in
+the complete inventory as a control, but ceiling-normalized claims are not made
+for cells that fail the preregistered eligibility threshold.
+
+The three diagnostic phases answer complementary questions:
+
+| phase | question | intervention |
 |---|---|---|
-| canonical raw CSVs | `data/lobench/raw/` | present, 7 files, hashes verified |
-| processed dataset | `data/lobench_processed.npz` | present, 8,039,246 rows |
-| production bundle | `validation/experiment01_bundle_20260730` | complete, about 253 GiB |
-| Phase I–III outputs | `validation/experiment01/execution_20260730` | complete |
-| P→M diagnostic | `validation/experiment01/predictability_allocation_20260819/run` | complete |
-| 3×3 encoder checkpoints | `checkpoints/multiseed` | present |
+| I | Is the signal more label-expensive to recover? | learning curves, trace-normalized ridge, progressive whitening |
+| II | Where is predictive signal located in the covariance spectrum? | predictive mass, PCA ladders, Haar nulls, disjoint spectral bands |
+| III-R | Does the gap survive a richer reader and changed conditioning? | preregistered MLP readers in native and whitened coordinates |
 
-The seven original raw CSVs are present in `data/lobench/raw/`. Their SHA-256
-hashes match the historical audit exactly, so CSV→NPZ/metadata reconstruction
-is available again. No frozen dataset, sidecar, bundle or result was regenerated
-when the raw sources were restored.
+A final preregistered diagnostic tested the stronger mechanistic proposal that
+encoder-independent target predictability monotonically determines spectral
+allocation.
 
-## Verification
+## Main findings
 
-Use the repository ROCm environment:
+1. **The finite-sample penalty is direction-specific.** The normalized Phase-I
+   gap is `0.5460` for direction, versus `0.1838` for volatility and `0.1528`
+   for timing. The directional penalty is therefore roughly 3–3.5 times the
+   control gaps.
 
-```bash
-../rocm_env/bin/python -m pytest -q
-```
+2. **There is also a distinct linear ceiling gap.** Under the primary readout,
+   the robust supervised–horizon-JEPA operational ceiling difference is about
+   `0.165`. Ceiling and normalized recovery are reported separately.
 
-Current result after the repository reorganization and artifact packaging:
-**165 passed**.
+3. **Leading variance is not leading predictive utility for horizon-JEPA.**
+   Phase II places little directional predictive mass in its first principal
+   directions; at small ranks its top-PCA subspace is consistently beaten by
+   matched Haar-random subspaces. Supervised signal is concentrated much
+   earlier in the spectrum.
 
-Inspect the production bundle without rerunning analysis:
+4. **Whitening helps, but the effect is not low-rank.** Whitening the leading
+   `128` components halves the Phase-I gap without eliminating it. Loss of
+   statistical robustness requires nearly complete whitening
+   (`k_nonrobust = 508`). The result does not support the claim that the problem
+   is concentrated in a handful of principal components.
 
-```bash
-../rocm_env/bin/python -m scripts.experiment01.run_experiment_01 preflight \
-  --bundle validation/experiment01_bundle_20260730
-```
+5. **Temporal pooling exposes an encoder-specific fragility.** Horizon-JEPA
+   directional $R^2$ falls from `0.2199` on `last_concat512` to `0.0701` on
+   `meanK_concatS`; supervised remains approximately stable
+   (`0.3853` to `0.3941`).
 
-Audit the historical post-P0 artifacts:
+6. **A nonlinear reader recovers content but does not erase relative
+   difficulty.** Phase III-R is classified `R3`: the MLP raises the
+   horizon-JEPA ceiling, including to `0.9119` of supervised after full
+   whitening, while the low-budget relative gap persists.
 
-```bash
-../rocm_env/bin/python -m scripts.experiment01.run_experiment_01 audit-historical \
-  --in-dir validation/readouts_v2_20260728
-```
+7. **The stronger predictability-allocation mechanism did not pass its frozen
+   gate.** The preregistered $P\to M$ diagnostic failed the required
+   per-seed Spearman threshold. This limits the mechanistic claim without
+   invalidating the observed spectral anti-alignment, pooling fragility or
+   reader-relative recovery results.
 
-The old command name `audit-legacy` remains an alias for reproducibility.
+![Predictive mass across the covariance spectrum](docs/results/phase2/figures/01_predictive_mass.png)
 
-## Principal reports
+## Interpretation and limits
 
-- [Phase I](docs/results/phase1/REPORT_EXPERIMENT_01.md)
-- [Phase II](docs/results/phase2/REPORT_EXPERIMENT_01_PHASE2.md)
-- [Phase III-R](docs/results/phase3r/REPORT_EXPERIMENT_01_PHASE3.md)
+The evidence supports a difference in **representation accessibility**: the
+same class of downstream reader reaches directional signal less efficiently in
+horizon-JEPA coordinates than in supervised coordinates. It does not establish
+information loss in the information-theoretic sense, prove that whitening is a
+causal intervention on the encoder, or show that self-supervision generally
+produces this geometry. The empirical system is one LOB dataset and the claims
+are conditional on the frozen architectures, objectives, readouts and target
+family.
+
+The broader mathematical framing and proposed follow-up programme are in
+[Geometry and Accessibility of Predictive Information](docs/research/RESEARCH_NOTE_GEOMETRY_ACCESSIBILITY.md).
+
+## Reports and frozen protocol
+
+- [Phase I — finite-sample accessibility](docs/results/phase1/REPORT_EXPERIMENT_01.md)
+- [Phase II — spectral localization](docs/results/phase2/REPORT_EXPERIMENT_01_PHASE2.md)
+- [Phase III-R — reader-relative accessibility](docs/results/phase3r/REPORT_EXPERIMENT_01_PHASE3.md)
 - [Predictability-allocation diagnostic](docs/results/predictability_allocation/REPORT_EXPERIMENT_01_PREDICTABILITY_ALLOCATION.md)
+- [Frozen Experiment 01 specification](docs/experiment01/SPEC_EXPERIMENT_01_SAMPLE_EFFICIENCY_20260730.md)
+- [Current project state](PROJECT_STATE.md)
 
-The nine canonical multiseed checkpoints are described by a tracked
-[manifest](docs/experiment01/CHECKPOINTS_MULTISEED_MANIFEST.json) and packaged
-as a deterministic 84-MB release artifact. The redundant 210-file training
-directory is not committed to Git.
+The lightweight publication package in [`docs/results/`](docs/results/README.md)
+contains reports, figures and metadata with a tracked checksum inventory.
 
-## Snapshot and recovery
-
-The state immediately before removal of `legacy/` is recoverable from:
+## Repository structure
 
 ```text
-commit  f77dc7468b10fdb7bc7272d41fcc49348341e80a
-tag     project-snapshot-2026-08-24-experiment01
+experiment01/            Phase I–III and diagnostic implementation
+experiment01/reference/  frozen equivalence and reproduction gates
+models/                   shared encoder architecture
+training/                 canonical encoder training entrypoints
+scripts/dataset/          canonical CSV-to-NPZ builder
+scripts/experiment01/     reproducible command-line entrypoints
+scripts/artifacts/        checkpoint verification and packaging
+tests/                    fail-closed integrity and regression tests
+docs/                     theory, protocol, reports and reproducibility notes
 ```
 
-Bulk ignored artifacts are not duplicated in Git; their canonical hashes are
-recorded in manifests and in
-[PROJECT_SNAPSHOT_20260824.md](docs/history/PROJECT_SNAPSHOT_20260824.md).
+## Reproducibility
 
-The documentation index is [docs/README.md](docs/README.md).
+Install the pinned Python dependencies and run the test suite:
+
+```bash
+python -m pip install -r requirements.txt
+python -m pytest -q
+```
+
+The production environment used Python 3.12 and PyTorch 2.9.1 with ROCm 6.3.
+The complete feature bundle is about 253 GiB and is intentionally not stored in
+Git. Data tiers, hashes, expected storage and execution commands are documented
+in [REPRODUCIBILITY.md](docs/REPRODUCIBILITY.md).
+
+## Checkpoints
+
+The scientific inventory contains exactly nine canonical encoder checkpoints:
+three objectives by three encoder seeds. Their relative paths, sizes and
+SHA-256 hashes are frozen in
+[CHECKPOINTS_MULTISEED_MANIFEST.json](docs/experiment01/CHECKPOINTS_MULTISEED_MANIFEST.json).
+They are packaged as one deterministic 84-MB release artifact rather than 210
+intermediate training files; see [CHECKPOINTS.md](docs/experiment01/CHECKPOINTS.md).

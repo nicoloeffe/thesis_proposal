@@ -30,7 +30,7 @@ This is the readout we agreed for both arms: minimal, identical, non-bottlenecki
 The grounded z32 head from earlier probes lives elsewhere (probe of compressibility).
 
 Output checkpoint format is symmetric with the JEPA-grid readout probe so that
-`scripts/evaluation/compare_supervised_jepa.py` consumes both with the same code
+Experiment 01 consumes both with the same evaluation protocol
 path.
 
 Usage

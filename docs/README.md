@@ -1,55 +1,32 @@
-# Documentation index
+# Documentation
 
-The current operational state lives in
-[`PROJECT_STATE.md`](../PROJECT_STATE.md). This directory contains supporting
-material grouped by role so that dated notes are not confused with current
-results.
+The root [README](../README.md) introduces the scientific question, design and
+main findings. [PROJECT_STATE.md](../PROJECT_STATE.md) records the frozen
+scientific and operational state.
 
-For an external reviewer, start with
-[`REPRODUCIBILITY.md`](REPRODUCIBILITY.md) and the tracked
-[`results/`](results/README.md) package.
+## Theory
 
-## Experiment 01
+- [Geometry and Accessibility of Predictive Information](research/RESEARCH_NOTE_GEOMETRY_ACCESSIBILITY.md):
+  formal distinction between predictive content, pooling preservation,
+  finite-sample accessibility and decoder co-adaptation.
 
-- [`EXPERIMENT_01_IMPLEMENTATION.md`](experiment01/EXPERIMENT_01_IMPLEMENTATION.md):
-  implementation and reproducibility contract;
-- [`AUDIT_EXPERIMENT_01.md`](experiment01/AUDIT_EXPERIMENT_01.md): historical
-  pre-implementation audit from 2026-07-30;
-- [`EXPERIMENT_01_PREDICTABILITY_ALLOCATION_PROTOCOL.md`](experiment01/EXPERIMENT_01_PREDICTABILITY_ALLOCATION_PROTOCOL.md):
-  frozen post-Phase-III diagnostic protocol and outcome;
-- [`REPRODUCTION_GATE_EXPERIMENT_01.json`](experiment01/REPRODUCTION_GATE_EXPERIMENT_01.json):
-  historical OLS parity gate retained as a small tracked artifact;
-- [`SPEC_EXPERIMENT_01_SAMPLE_EFFICIENCY_20260730.md`](experiment01/SPEC_EXPERIMENT_01_SAMPLE_EFFICIENCY_20260730.md):
-  frozen scientific specification;
-- [`CHECKPOINTS.md`](experiment01/CHECKPOINTS.md): canonical checkpoint release
-  and verification instructions.
+## Protocol and implementation
 
-Canonical scientific reports remain next to their frozen outputs under
-`validation/`; direct links are collected in the root `README.md` and
-`PROJECT_STATE.md`.
+- [Frozen Experiment 01 specification](experiment01/SPEC_EXPERIMENT_01_SAMPLE_EFFICIENCY_20260730.md)
+- [Implementation and integrity contract](experiment01/EXPERIMENT_01_IMPLEMENTATION.md)
+- [Dataset and artifact integrity audit](experiment01/AUDIT_EXPERIMENT_01.md)
+- [Predictability-allocation protocol](experiment01/EXPERIMENT_01_PREDICTABILITY_ALLOCATION_PROTOCOL.md)
+- [Reproducibility guide](REPRODUCIBILITY.md)
+- [Canonical checkpoint inventory](experiment01/CHECKPOINTS.md)
 
-## Historical snapshots
+## Results
 
-- [`PROJECT_SNAPSHOT_20260824.md`](history/PROJECT_SNAPSHOT_20260824.md): Git and
-  artifact inventory immediately before removal of the obsolete top-level
-  `legacy/` tree;
-- [`CONSOLIDATION_20260728.md`](history/CONSOLIDATION_20260728.md): post-P0
-  consolidation results;
-- [`STATO_TESI_POST_CONSOLIDAMENTO_20260728.md`](history/STATO_TESI_POST_CONSOLIDAMENTO_20260728.md):
-  thesis-state snapshot superseded by `PROJECT_STATE.md`.
+- [Result package and checksum index](results/README.md)
+- [Phase I — finite-sample accessibility](results/phase1/REPORT_EXPERIMENT_01.md)
+- [Phase II — spectral localization](results/phase2/REPORT_EXPERIMENT_01_PHASE2.md)
+- [Phase III-R — reader-relative accessibility](results/phase3r/REPORT_EXPERIMENT_01_PHASE3.md)
+- [Predictability-allocation diagnostic](results/predictability_allocation/REPORT_EXPERIMENT_01_PREDICTABILITY_ALLOCATION.md)
 
-Historical documents preserve the claims and paths valid on their stated date.
-They must not be treated as current workspace inventories.
-
-## Research notes
-
-- [`RESEARCH_NOTE_GEOMETRY_ACCESSIBILITY.md`](research/RESEARCH_NOTE_GEOMETRY_ACCESSIBILITY.md):
-  working mathematical research note;
-- [`CHAT_HANDOFF_RESEARCH_NOTE.md`](research/CHAT_HANDOFF_RESEARCH_NOTE.md):
-  dated handoff instructions for that note.
-
-## Source-tree guides
-
-- [`training/README.md`](../training/README.md): current versus historical
-  checkpoint-compatible training modules;
-- [`scripts/README.md`](../scripts/README.md): dataset and evaluation scripts.
+The scientific reports preserve necessary reproduction and parity statements.
+Superseded workspace inventories, internal handoff notes and exploratory probe
+scripts are intentionally excluded from the publication package.

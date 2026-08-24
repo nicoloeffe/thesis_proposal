@@ -1,4 +1,4 @@
-"""Fail-closed reproduction gate for the corrected post-P0 PCA ladder."""
+"""Fail-closed reproduction gate for the corrected reference PCA ladder."""
 
 from __future__ import annotations
 
@@ -9,20 +9,20 @@ from typing import Mapping, Sequence
 import numpy as np
 import pandas as pd
 
-from experiment01.historical.consolidation_geometry import (
+from experiment01.reference.consolidation_geometry import (
     derive_pooling,
     ladder_from_stats,
     linear_stats,
     pca_from_stats,
 )
-from experiment01.historical.ladder_accessibility import validate_stage1_inputs
+from experiment01.reference.ladder_accessibility import validate_stage1_inputs
 
 from .errors import ExperimentIntegrityError
 from .io import atomic_write_json, sha256_file
 
 
-LEGACY_PHASE2_POOLINGS = ("last_concat512", "meanK_concatS")
-LEGACY_PHASE2_SCHEDULE = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
+REFERENCE_PHASE2_POOLINGS = ("last_concat512", "meanK_concatS")
+REFERENCE_PHASE2_SCHEDULE = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
 
 
 def reproduce_post_p0_pca_ladder(
@@ -31,7 +31,7 @@ def reproduce_post_p0_pca_ladder(
     output_path: str | Path,
     *,
     tolerance: float = 5e-10,
-    poolings: Sequence[str] = LEGACY_PHASE2_POOLINGS,
+    poolings: Sequence[str] = REFERENCE_PHASE2_POOLINGS,
 ) -> Mapping[str, object]:
     """Recompute every trained-target PCA-ladder cell used by Phase II.
 
@@ -67,7 +67,7 @@ def reproduce_post_p0_pca_ladder(
     expected = reference[
         reference["pooling"].isin(poolings)
         & reference["target"].isin(target_names)
-        & reference["m"].isin(LEGACY_PHASE2_SCHEDULE)
+        & reference["m"].isin(REFERENCE_PHASE2_SCHEDULE)
     ][["arm", "seed", "pooling", "target", "m", "r2"]].copy()
     key = ["arm", "seed", "pooling", "target", "m"]
     if expected.duplicated(key).any():
@@ -89,7 +89,7 @@ def reproduce_post_p0_pca_ladder(
                 )
                 _, eigenvectors = pca_from_stats(stats)
                 ladder = ladder_from_stats(
-                    stats, eigenvectors, LEGACY_PHASE2_SCHEDULE
+                    stats, eigenvectors, REFERENCE_PHASE2_SCHEDULE
                 )
                 for m, scores in ladder.items():
                     for target_name, score in zip(target_names, scores):
@@ -161,7 +161,7 @@ def reproduce_post_p0_pca_ladder(
         "n_cells": len(compared),
         "maximum_absolute_difference": maximum,
         "poolings": list(poolings),
-        "schedule": list(LEGACY_PHASE2_SCHEDULE),
+        "schedule": list(REFERENCE_PHASE2_SCHEDULE),
         "reference": {
             "path": str(reference_path),
             "sha256": sha256_file(reference_path),

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from experiment01.historical.consolidation_geometry import (
+from experiment01.reference.consolidation_geometry import (
     HADAMARD4,
     hadamard_mean_basis,
     hadamard_transform,
@@ -12,7 +12,7 @@ from experiment01.historical.consolidation_geometry import (
     principal_angle_curve,
     random_subspace_null,
 )
-from experiment01.historical.ladder_accessibility import mlp_ceiling
+from experiment01.reference.ladder_accessibility import mlp_ceiling
 
 
 def _ladder(xtr, ytr, xva, yva, schedule):

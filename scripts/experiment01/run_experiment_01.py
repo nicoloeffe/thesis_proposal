@@ -7,7 +7,10 @@ import argparse
 import json
 from pathlib import Path
 
-from experiment01.legacy import canonical_reproduction_gate, legacy_input_diagnosis
+from experiment01.reproduction import (
+    canonical_reproduction_gate,
+    reference_input_diagnosis,
+)
 from experiment01.pipeline import Phase1Config, run_phase1
 from experiment01.reporting import generate_phase1_report
 from experiment01.schema import load_input_bundle
@@ -29,16 +32,16 @@ def _parser() -> argparse.ArgumentParser:
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
-    historical = commands.add_parser(
-        "audit-historical",
-        aliases=["audit-legacy"],
+    reference = commands.add_parser(
+        "audit-reference",
+        aliases=["audit-historical", "audit-legacy"],
         help="verify corrected v2 dumps and explain why they cannot run Phase I v2",
     )
-    historical.add_argument("--in-dir", required=True)
+    reference.add_argument("--in-dir", required=True)
 
     reproduce = commands.add_parser(
         "reproduce",
-        help="run the mandatory historical full-rank min-norm OLS gate",
+        help="run the mandatory reference full-rank min-norm OLS gate",
     )
     reproduce.add_argument("--in-dir", required=True)
     reproduce.add_argument("--out", required=True)
@@ -55,11 +58,16 @@ def _parser() -> argparse.ArgumentParser:
 
     split3 = commands.add_parser(
         "build-three-way-split",
-        help="retain historical train and chronologically halve held-out days",
+        help="retain reference train and chronologically halve held-out days",
     )
     split3.add_argument("--sidecar-dir", required=True)
     split3.add_argument("--dataset", required=True)
-    split3.add_argument("--historical-split", required=True)
+    split3.add_argument(
+        "--reference-split",
+        "--historical-split",
+        dest="reference_split",
+        required=True,
+    )
     split3.add_argument("--out-dir", required=True)
 
     prepare = commands.add_parser(
@@ -69,11 +77,12 @@ def _parser() -> argparse.ArgumentParser:
     prepare.add_argument("--split-dir", required=True)
     prepare.add_argument("--dataset", required=True)
     prepare.add_argument(
+        "--reference-dir",
         "--historical-dir",
         "--legacy-dir",
-        dest="historical_dir",
+        dest="reference_dir",
         required=True,
-        help="frozen post-P0 readout directory (--legacy-dir is a compatibility alias)",
+        help="frozen reference readout directory",
     )
     prepare.add_argument("--out-dir", required=True)
     prepare.add_argument("--shard-rows", type=int, default=100_000)
@@ -84,11 +93,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     preextract.add_argument("--bundle", required=True)
     preextract.add_argument(
+        "--reference-dir",
         "--historical-dir",
         "--legacy-dir",
-        dest="historical_dir",
+        dest="reference_dir",
         required=True,
-        help="frozen post-P0 readout directory (--legacy-dir is a compatibility alias)",
+        help="frozen reference readout directory",
     )
     preextract.add_argument("--device", default="cuda")
     preextract.add_argument("--batch-size", type=int, default=512)
@@ -165,8 +175,8 @@ def _parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = _parser().parse_args()
-    if args.command in {"audit-historical", "audit-legacy"}:
-        print(json.dumps(legacy_input_diagnosis(args.in_dir), indent=2))
+    if args.command in {"audit-reference", "audit-historical", "audit-legacy"}:
+        print(json.dumps(reference_input_diagnosis(args.in_dir), indent=2))
         return
     if args.command == "reproduce":
         payload = canonical_reproduction_gate(
@@ -204,7 +214,7 @@ def main() -> None:
         payload = build_three_way_split(
             args.sidecar_dir,
             args.dataset,
-            args.historical_split,
+            args.reference_split,
             args.out_dir,
         )
         print(
@@ -231,7 +241,7 @@ def main() -> None:
         payload = prepare_bundle(
             args.split_dir,
             args.dataset,
-            args.historical_dir,
+            args.reference_dir,
             args.out_dir,
             shard_rows=args.shard_rows,
         )
@@ -255,7 +265,7 @@ def main() -> None:
 
         payload = run_pre_extraction_gate(
             args.bundle,
-            args.historical_dir,
+            args.reference_dir,
             device_name=args.device,
             batch_size=args.batch_size,
             num_workers=args.num_workers,

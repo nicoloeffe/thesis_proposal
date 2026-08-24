@@ -39,7 +39,7 @@ from typing import Any, Iterable, Mapping, Sequence
 import numpy as np
 import pandas as pd
 
-from experiment01.historical.analysis_artifacts import (
+from experiment01.reference.analysis_artifacts import (
     canonical_sha256 as historical_canonical_sha256,
     sha256_array as historical_sha256_array,
 )

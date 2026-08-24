@@ -993,7 +993,7 @@ def write_phase2_manifest(phase2_dir: str | Path) -> Mapping[str, object]:
     source_records = []
     for relative in (
         "experiment01/phase2.py",
-        "experiment01/phase2_legacy.py",
+        "experiment01/phase2_reproduction.py",
         "experiment01/phase2_reporting.py",
         "scripts/experiment01/run_experiment_01_phase2.py",
         "tests/test_experiment01_phase2.py",

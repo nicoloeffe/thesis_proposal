@@ -8,7 +8,7 @@ summarized in [`PROJECT_STATE.md`](../PROJECT_STATE.md).
 
 - source code and tests;
 - the frozen Experiment 01 specification and implementation contract;
-- historical parity and checkpoint manifests with SHA-256 identifiers;
+- reference parity and checkpoint manifests with SHA-256 identifiers;
 - publication copies of the Phase I, Phase II, Phase III-R and
   predictability-allocation reports, summaries and figures under `docs/results/`.
 

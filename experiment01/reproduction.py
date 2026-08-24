@@ -1,4 +1,4 @@
-"""Read-only checks against the corrected post-P0 two-way dump battery."""
+"""Read-only checks against the corrected reference dump battery."""
 
 from __future__ import annotations
 
@@ -8,13 +8,13 @@ from typing import Mapping
 
 import numpy as np
 
-from experiment01.historical.analysis_artifacts import atomic_write_json
-from experiment01.historical.consolidation_geometry import (
+from experiment01.reference.analysis_artifacts import atomic_write_json
+from experiment01.reference.consolidation_geometry import (
     derive_pooling,
     linear_stats,
     r2_from_basis,
 )
-from experiment01.historical.ladder_accessibility import (
+from experiment01.reference.ladder_accessibility import (
     dir_indices,
     validate_stage1_inputs,
 )
@@ -28,7 +28,7 @@ EXPECTED_REPRODUCTION = {
 }
 
 
-def legacy_input_diagnosis(in_dir: str | Path) -> Mapping[str, object]:
+def reference_input_diagnosis(in_dir: str | Path) -> Mapping[str, object]:
     root = Path(in_dir).resolve()
     inventory = validate_stage1_inputs(
         root, str(root / "targets_heldout.npz")

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from experiment01.historical import extract_readouts_multiseed as stage1
+from experiment01.reference import extract_readouts_multiseed as stage1
 
 
 def _write_tiny_dataset(

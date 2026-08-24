@@ -2,7 +2,7 @@
 
 The package is intentionally independent from encoder training.  It consumes a
 provenance-complete bundle of frozen features, stable row identities and target
-arrays, and refuses legacy two-way/capped bundles.
+arrays, and refuses superseded two-way or capped bundles.
 """
 
 from .constants import (

@@ -1,4 +1,4 @@
-"""Historical post-P0 analysis modules retained for reproducibility."""
+"""Frozen reference analyses used by Experiment 01 equivalence gates."""
 
 import sys
 

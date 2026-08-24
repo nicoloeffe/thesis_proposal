@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
-from experiment01.historical.analysis_artifacts import load_split
+from experiment01.reference.analysis_artifacts import load_split
 from training.train_tokenizer_t import (
     compute_valid_endpoints,
     grouped_split_by_stock_day,

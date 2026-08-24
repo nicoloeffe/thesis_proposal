@@ -7,7 +7,7 @@ import argparse
 import json
 
 from experiment01.phase2 import Phase2Config, run_phase2
-from experiment01.phase2_legacy import reproduce_post_p0_pca_ladder
+from experiment01.phase2_reproduction import reproduce_post_p0_pca_ladder
 from experiment01.phase2_reporting import (
     summarize_and_report_phase2,
     write_phase2_manifest,

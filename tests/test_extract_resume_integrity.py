@@ -9,8 +9,8 @@ import sys
 import numpy as np
 import pytest
 
-from experiment01.historical import analysis_artifacts as artifacts
-from experiment01.historical import extract_readouts_multiseed as stage1
+from experiment01.reference import analysis_artifacts as artifacts
+from experiment01.reference import extract_readouts_multiseed as stage1
 
 
 def _readout_metadata() -> dict[str, object]:

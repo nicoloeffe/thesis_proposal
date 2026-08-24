@@ -42,13 +42,19 @@ def main() -> None:
     gates.add_argument("--phase2-dir", required=True)
     gates.add_argument("--out-dir", required=True)
     gates.add_argument("--device", default="cuda")
-    historical = subparsers.add_parser(
-        "historical-gate",
-        help="retrain and reproduce the frozen historical post-P0 MLP",
+    reference = subparsers.add_parser(
+        "reference-gate",
+        aliases=["historical-gate"],
+        help="retrain and reproduce the frozen reference MLP",
     )
-    historical.add_argument("--historical-dir", required=True)
-    historical.add_argument("--out-dir", required=True)
-    historical.add_argument("--device", default="cuda")
+    reference.add_argument(
+        "--reference-dir",
+        "--historical-dir",
+        dest="reference_dir",
+        required=True,
+    )
+    reference.add_argument("--out-dir", required=True)
+    reference.add_argument("--device", default="cuda")
     selection = subparsers.add_parser(
         "select",
         help="run the full validation-only weight-decay selection grid",
@@ -107,9 +113,9 @@ def main() -> None:
             device=args.device,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
-    elif args.command == "historical-gate":
+    elif args.command in {"reference-gate", "historical-gate"}:
         result = run_historical_mlp_gate(
-            args.historical_dir, args.out_dir, device=args.device
+            args.reference_dir, args.out_dir, device=args.device
         )
         print(json.dumps(result, indent=2, sort_keys=True))
     elif args.command == "select":

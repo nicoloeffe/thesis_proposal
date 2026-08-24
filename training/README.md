@@ -1,11 +1,11 @@
 # Training modules
 
-Current training entrypoints:
+Canonical training entrypoints:
 
 - `train_tokenizer_t.py`;
 - `train_jepa_horizon.py`;
 - `train_jepa_masked.py`;
 - `train_supervised_grid.py`.
 
-`historical/` contains checkpoint-compatible pre-fix definitions required by
-older evaluation scripts. Do not use those modules for new training runs.
+The publication package contains only the definitions used by the controlled
+multiseed protocol. Exploratory checkpoint-compatibility modules are excluded.

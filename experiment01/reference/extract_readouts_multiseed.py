@@ -271,8 +271,8 @@ READOUT_ARRAYS = (
     "tmean_concat512_val",
 )
 SOURCE_FILES = (
-    "experiment01/historical/analysis_artifacts.py",
-    "experiment01/historical/extract_readouts_multiseed.py",
+    "experiment01/reference/analysis_artifacts.py",
+    "experiment01/reference/extract_readouts_multiseed.py",
     "models/model_tokenizer_t.py",
     "training/train_tokenizer_t.py",
     "training/train_jepa_horizon.py",

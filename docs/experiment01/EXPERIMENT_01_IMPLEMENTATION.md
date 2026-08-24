@@ -6,8 +6,9 @@ version 2.0.
 
 ## Current status
 
-- repository/post-P0 audit: complete (`AUDIT_EXPERIMENT_01.md`);
-- historical OLS gate: passed (`REPRODUCTION_GATE_EXPERIMENT_01.json`);
+- dataset and reference-artifact equivalence gates: complete
+  (`AUDIT_EXPERIMENT_01.md`);
+- reference OLS reproduction gate: passed (`REPRODUCTION_GATE_EXPERIMENT_01.json`);
 - Phase-I implementation: complete;
 - canonical metadata/equivalence gate: passed, 8,039,246/8,039,246 rows;
 - preregistered three-way split: complete;
@@ -25,18 +26,16 @@ version 2.0.
   technical outcome unchanged;
 - post-Phase-III predictability-allocation diagnostic: complete, preregistered
   decision `fail` because the strong per-seed correlation gate did not pass;
-- active software verification after removal of the top-level `legacy/`
-  directory: 163 tests passed.
+- active software verification: 165 tests passed.
 
 The authoritative current overview is
 [`PROJECT_STATE.md`](../../PROJECT_STATE.md). This implementation contract
-retains historical commands and protocol details for auditability.
+retains frozen reproduction commands and protocol details for auditability.
 
 The seven original raw CSVs are present under `data/lobench/raw/`; their
-SHA-256 hashes match the historical audit file by file. Full reconstruction
-from CSV is therefore available. Restoring the raw sources did not regenerate
-or modify the processed NPZ, canonical sidecars, production bundle,
-checkpoints, or frozen Phase-I–III outputs.
+SHA-256 hashes match the canonical audit file by file. Full reconstruction
+from CSV is therefore available. The processed NPZ, canonical sidecars,
+production bundle, checkpoints and frozen Phase-I–III outputs remain unchanged.
 
 The sampled post-P0 dumps are used only as equivalence controls. The corrected
 input is built from the full NPZ plus a CSV-derived metadata sidecar and the
@@ -49,7 +48,7 @@ scripts/experiment01/run_experiment_01.py  CLI
 
 experiment01/
   metadata.py              CSV sidecar + full numerical CSV↔NPZ gate
-  split3.py                historical train + chronological held-out halves
+  split3.py                reference train + chronological held-out halves
   bundle.py                complete rows/target shards + storage estimate
   sharded.py               verified row-addressable sharded NPY arrays
   extraction.py            benchmarks, readout equivalence, resumable extraction
@@ -60,8 +59,9 @@ experiment01/
   results.py               operational ceilings and hierarchical summaries
   summary.py               gaps, curve quantities and A1/A2/B/D assignment
   reporting.py             Phase-I figures and Markdown report
-  legacy.py                read-only post-P0 validation and reproduction gate
-  historical/              corrected post-P0 extraction and ladder stack
+  reproduction.py          read-only validation and OLS reproduction gate
+  phase2_reproduction.py   frozen PCA-ladder reproduction gate
+  reference/               frozen extraction and ladder equivalence stack
 
 tests/test_experiment01.py synthetic compliance/regression tests
 ```
@@ -279,7 +279,7 @@ MPLCONFIGDIR=/tmp/matplotlib-cache \
 ../rocm_env/bin/python -m scripts.experiment01.run_experiment_01 build-three-way-split \
   --sidecar-dir validation/experiment01_inputs_20260730/sidecar \
   --dataset data/lobench_processed.npz \
-  --historical-split validation/readouts_v2_20260728/split.npz \
+  --reference-split validation/readouts_v2_20260728/split.npz \
   --out-dir validation/experiment01_inputs_20260730/split3
 
 # Write complete rows/target shards and the storage estimate
@@ -287,14 +287,14 @@ MPLCONFIGDIR=/tmp/matplotlib-cache \
 ../rocm_env/bin/python -m scripts.experiment01.run_experiment_01 prepare-bundle \
   --split-dir validation/experiment01_inputs_20260730/split3 \
   --dataset data/lobench_processed.npz \
-  --historical-dir validation/readouts_v2_20260728 \
+  --reference-dir validation/readouts_v2_20260728 \
   --out-dir validation/experiment01_bundle_20260730
 
 # Mandatory benchmarks and feature-equivalence gate
 MPLCONFIGDIR=/tmp/matplotlib-cache \
 ../rocm_env/bin/python -m scripts.experiment01.run_experiment_01 preextract-gate \
   --bundle validation/experiment01_bundle_20260730 \
-  --historical-dir validation/readouts_v2_20260728 \
+  --reference-dir validation/readouts_v2_20260728 \
   --device cuda
 
 # Resumable checkpoint/split/shard extraction
@@ -305,7 +305,7 @@ MPLCONFIGDIR=/tmp/matplotlib-cache \
 
 # Verify the historical post-P0 battery and display blockers
 MPLCONFIGDIR=/tmp/matplotlib-cache \
-../rocm_env/bin/python -m scripts.experiment01.run_experiment_01 audit-historical \
+../rocm_env/bin/python -m scripts.experiment01.run_experiment_01 audit-reference \
   --in-dir validation/readouts_v2_20260728
 
 # Recompute the historical free OLS gate

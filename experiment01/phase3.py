@@ -1902,12 +1902,12 @@ def run_historical_mlp_gate(
     device_record = initialize_compute_device(device)
     source_path = (
         Path(__file__).resolve().parent
-        / "historical/ladder_accessibility.py"
+        / "reference/ladder_accessibility.py"
     )
     _require_sha256(
         source_path, HISTORICAL_MLP_SOURCE_SHA256, "historical MLP implementation"
     )
-    from experiment01.historical.ladder_accessibility import (
+    from experiment01.reference.ladder_accessibility import (
         dir_indices,
         mlp_ceiling,
         validate_stage1_inputs,
@@ -2314,7 +2314,7 @@ def audit_historical_mlp_semantics(repo_root: str | Path) -> dict[str, Any]:
     """Static identity gate for the code and frozen historical reference tables."""
 
     root = Path(repo_root)
-    source = root / "experiment01/historical/ladder_accessibility.py"
+    source = root / "experiment01/reference/ladder_accessibility.py"
     _require_sha256(source, HISTORICAL_MLP_SOURCE_SHA256, "historical MLP source")
     aggregate = (
         root

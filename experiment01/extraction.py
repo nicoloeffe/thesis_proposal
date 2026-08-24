@@ -14,8 +14,8 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 
-from experiment01.historical.analysis_artifacts import load_split
-from experiment01.historical.extract_readouts_multiseed import (
+from experiment01.reference.analysis_artifacts import load_split
+from experiment01.reference.extract_readouts_multiseed import (
     RawWindowDataset,
     load_encoder,
 )

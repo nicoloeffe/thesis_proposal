@@ -20,17 +20,17 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from experiment01.historical.analysis_artifacts import (
+from experiment01.reference.analysis_artifacts import (
     atomic_write_json,
     load_split,
     sha256_file,
 )
-from experiment01.historical.consolidation_geometry import (
+from experiment01.reference.consolidation_geometry import (
     ladder_from_stats,
     linear_stats,
     pca_from_stats,
 )
-from experiment01.historical.extract_readouts_multiseed import (
+from experiment01.reference.extract_readouts_multiseed import (
     HorizonJEPAEncoderConfig,
     RawWindowDataset,
     ReadoutConfig,
@@ -39,7 +39,7 @@ from experiment01.historical.extract_readouts_multiseed import (
     robust_torch_load,
     to_numpy_stats,
 )
-from experiment01.historical.ladder_accessibility import dir_indices
+from experiment01.reference.ladder_accessibility import dir_indices
 
 
 def _write_csv(path: Path, rows: list[dict], columns: list[str]) -> None:
