@@ -34,7 +34,6 @@ def _parser() -> argparse.ArgumentParser:
 
     reference = commands.add_parser(
         "audit-reference",
-        aliases=["audit-historical", "audit-legacy"],
         help="verify corrected v2 dumps and explain why they cannot run Phase I v2",
     )
     reference.add_argument("--in-dir", required=True)
@@ -64,7 +63,6 @@ def _parser() -> argparse.ArgumentParser:
     split3.add_argument("--dataset", required=True)
     split3.add_argument(
         "--reference-split",
-        "--historical-split",
         dest="reference_split",
         required=True,
     )
@@ -78,8 +76,6 @@ def _parser() -> argparse.ArgumentParser:
     prepare.add_argument("--dataset", required=True)
     prepare.add_argument(
         "--reference-dir",
-        "--historical-dir",
-        "--legacy-dir",
         dest="reference_dir",
         required=True,
         help="frozen reference readout directory",
@@ -94,8 +90,6 @@ def _parser() -> argparse.ArgumentParser:
     preextract.add_argument("--bundle", required=True)
     preextract.add_argument(
         "--reference-dir",
-        "--historical-dir",
-        "--legacy-dir",
         dest="reference_dir",
         required=True,
         help="frozen reference readout directory",
@@ -175,7 +169,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = _parser().parse_args()
-    if args.command in {"audit-reference", "audit-historical", "audit-legacy"}:
+    if args.command == "audit-reference":
         print(json.dumps(reference_input_diagnosis(args.in_dir), indent=2))
         return
     if args.command == "reproduce":

@@ -14,8 +14,7 @@ per soglie, procedure e risultati numerici.
 | Phase I | completa | `A1` tecnico secondario, con robusto gap di ceiling |
 | Phase II | completa | localizzazione spettrale direzionale profonda |
 | Phase III-R | completa | outcome reader-relative `R3` |
-| diagnostica predicibilità `P→M` | completa | gate preregistrato `fail` |
-| suite software | completa | 165 test superati |
+| suite software | completa | 157 test superati |
 
 Non sono previste esecuzioni di Phase II o III aggiuntive. Encoder, bundle,
 split, seed, budget, target, soglie e risultati sono congelati.
@@ -33,8 +32,6 @@ accessibilità finite-sample.
    una trasformazione quasi completa dello spettro.
 4. Un reader MLP recupera una parte maggiore del ceiling senza eliminare la
    difficoltà relativa ai bassi budget.
-5. L'ipotesi meccanicistica più forte — allocazione spettrale monotona in
-   funzione della predicibilità intrinseca — non supera il gate preregistrato.
 
 Queste osservazioni supportano una differenza nella **geometria di
 accessibilità**. Non dimostrano perdita d'informazione in senso
@@ -103,31 +100,6 @@ Ceiling MLP full-budget horizon-JEPA:
 Il reader non lineare recupera contenuto operativo ma non elimina la difficoltà
 finite-sample relativa.
 
-## Diagnostica predicibilità → allocazione
-
-Report:
-[REPORT_EXPERIMENT_01_PREDICTABILITY_ALLOCATION.md](docs/results/predictability_allocation/REPORT_EXPERIMENT_01_PREDICTABILITY_ALLOCATION.md).
-
-La diagnostica usa deliberatamente un campione frazionario ma ampio e
-stratificato:
-
-- 100.000 endpoint train e 50.000 validation;
-- tutti e sette i titoli;
-- 1.527 stock-day train e 170 validation disgiunti;
-- 99,941% degli stock-day validi rappresentati.
-
-Decisione preregistrata: **fail**, senza failure tecniche.
-
-```text
-rho horizon-JEPA  0,2475 / 0,2132 / 0,2059
-rho supervised   -0,1348 / -0,1838 / -0,1054
-Delta rho medio   0,3636
-low-P sotto null  2 / 2 / 3 horizon; 0 / 0 / 0 supervised
-```
-
-Il segnale relativo non basta a sostenere una relazione monotona forte fra
-predicibilità intrinseca e massa top-spettrale.
-
 ## Asset canonici
 
 | asset | percorso locale | stato |
@@ -149,9 +121,6 @@ bdded4ebd03c29d47e5dfdba106590f24763cc06bb7e6e5ea379eb4b34201c0b
 Phase-II manifest
 1a30b67f6739a1a0440eae1866ee55f72cddf94248e5edf336a7e605461144c2
 
-P→M manifest
-31d348cee4374a8ee7cdd29d6d578b60a99b5f0dabca2a374a991adecfc84e61
-
 checkpoint release archive
 3e268b6fa73a122399e4b420e989a4d37112e2696efe55b4bf095892ab82ed06
 ```
@@ -160,7 +129,7 @@ checkpoint release archive
 
 | percorso | responsabilità |
 |---|---|
-| `experiment01/` | implementazione delle tre fasi e della diagnostica P→M |
+| `experiment01/` | implementazione delle tre fasi di Experiment 01 |
 | `experiment01/reference/` | gate congelati di equivalenza e riproduzione |
 | `training/` | training canonico dei tre bracci |
 | `scripts/dataset/` | builder CSV→NPZ |

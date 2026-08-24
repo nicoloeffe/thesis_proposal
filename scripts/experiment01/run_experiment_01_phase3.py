@@ -44,12 +44,10 @@ def main() -> None:
     gates.add_argument("--device", default="cuda")
     reference = subparsers.add_parser(
         "reference-gate",
-        aliases=["historical-gate"],
         help="retrain and reproduce the frozen reference MLP",
     )
     reference.add_argument(
         "--reference-dir",
-        "--historical-dir",
         dest="reference_dir",
         required=True,
     )
@@ -113,7 +111,7 @@ def main() -> None:
             device=args.device,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
-    elif args.command in {"reference-gate", "historical-gate"}:
+    elif args.command == "reference-gate":
         result = run_historical_mlp_gate(
             args.reference_dir, args.out_dir, device=args.device
         )

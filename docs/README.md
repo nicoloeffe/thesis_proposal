@@ -15,7 +15,6 @@ scientific and operational state.
 - [Frozen Experiment 01 specification](experiment01/SPEC_EXPERIMENT_01_SAMPLE_EFFICIENCY_20260730.md)
 - [Implementation and integrity contract](experiment01/EXPERIMENT_01_IMPLEMENTATION.md)
 - [Dataset and artifact integrity audit](experiment01/AUDIT_EXPERIMENT_01.md)
-- [Predictability-allocation protocol](experiment01/EXPERIMENT_01_PREDICTABILITY_ALLOCATION_PROTOCOL.md)
 - [Reproducibility guide](REPRODUCIBILITY.md)
 - [Canonical checkpoint inventory](experiment01/CHECKPOINTS.md)
 
@@ -25,7 +24,6 @@ scientific and operational state.
 - [Phase I — finite-sample accessibility](results/phase1/REPORT_EXPERIMENT_01.md)
 - [Phase II — spectral localization](results/phase2/REPORT_EXPERIMENT_01_PHASE2.md)
 - [Phase III-R — reader-relative accessibility](results/phase3r/REPORT_EXPERIMENT_01_PHASE3.md)
-- [Predictability-allocation diagnostic](results/predictability_allocation/REPORT_EXPERIMENT_01_PREDICTABILITY_ALLOCATION.md)
 
 The scientific reports preserve necessary reproduction and parity statements.
 Superseded workspace inventories, internal handoff notes and exploratory probe

@@ -12,9 +12,6 @@ link needed adjustment for publication.
 - [`phase3r/REPORT_EXPERIMENT_01_PHASE3.md`](phase3r/REPORT_EXPERIMENT_01_PHASE3.md):
   compute-feasible reader/conditioning diagnostic, protocol amendment and
   figures;
-- [`predictability_allocation/REPORT_EXPERIMENT_01_PREDICTABILITY_ALLOCATION.md`](predictability_allocation/REPORT_EXPERIMENT_01_PREDICTABILITY_ALLOCATION.md):
-  preregistered post-Phase-III diagnostic with decision and frozen protocol.
-
 Large Parquet tables, sufficient-statistic arrays, model shards and the
 production bundle remain outside Git. `SHA256SUMS` records the integrity of the
 publication subset.

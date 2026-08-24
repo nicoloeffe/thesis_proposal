@@ -7,9 +7,9 @@ The seven verified inputs live outside Git under `data/lobench/raw/`.
 
 ## Experiment 01
 
-`experiment01/` contains the Phase I, Phase II, original Phase III, reduced
-Phase III-R and predictability-allocation command-line entrypoints. Invoke them
-as modules from the repository root, for example:
+`experiment01/` contains the Phase I, Phase II, original Phase III and reduced
+Phase III-R command-line entrypoints. Invoke them as modules from the
+repository root, for example:
 
 ```bash
 ../rocm_env/bin/python -m scripts.experiment01.run_experiment_01 --help

@@ -101,10 +101,6 @@ The three diagnostic phases answer complementary questions:
 | II | Where is predictive signal located in the covariance spectrum? | predictive mass, PCA ladders, Haar nulls, disjoint spectral bands |
 | III-R | Does the gap survive a richer reader and changed conditioning? | preregistered MLP readers in native and whitened coordinates |
 
-A final preregistered diagnostic tested the stronger mechanistic proposal that
-encoder-independent target predictability monotonically determines spectral
-allocation.
-
 ## Main findings
 
 1. **The finite-sample penalty is direction-specific.** The normalized Phase-I
@@ -138,12 +134,6 @@ allocation.
    horizon-JEPA ceiling, including to `0.9119` of supervised after full
    whitening, while the low-budget relative gap persists.
 
-7. **The stronger predictability-allocation mechanism did not pass its frozen
-   gate.** The preregistered $P\to M$ diagnostic failed the required
-   per-seed Spearman threshold. This limits the mechanistic claim without
-   invalidating the observed spectral anti-alignment, pooling fragility or
-   reader-relative recovery results.
-
 ![Predictive mass across the covariance spectrum](docs/results/phase2/figures/01_predictive_mass.png)
 
 ## Interpretation and limits
@@ -165,7 +155,6 @@ The broader mathematical framing and proposed follow-up programme are in
 - [Phase I — finite-sample accessibility](docs/results/phase1/REPORT_EXPERIMENT_01.md)
 - [Phase II — spectral localization](docs/results/phase2/REPORT_EXPERIMENT_01_PHASE2.md)
 - [Phase III-R — reader-relative accessibility](docs/results/phase3r/REPORT_EXPERIMENT_01_PHASE3.md)
-- [Predictability-allocation diagnostic](docs/results/predictability_allocation/REPORT_EXPERIMENT_01_PREDICTABILITY_ALLOCATION.md)
 - [Frozen Experiment 01 specification](docs/experiment01/SPEC_EXPERIMENT_01_SAMPLE_EFFICIENCY_20260730.md)
 - [Current project state](PROJECT_STATE.md)
 

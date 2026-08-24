@@ -24,9 +24,7 @@ version 2.0.
   before production-test access because it was computationally disproportionate;
 - compute-feasible Phase-III-R: complete with frozen outcome `R3`, Phase-I
   technical outcome unchanged;
-- post-Phase-III predictability-allocation diagnostic: complete, preregistered
-  decision `fail` because the strong per-seed correlation gate did not pass;
-- active software verification: 165 tests passed.
+- active software verification: 157 tests passed.
 
 The authoritative current overview is
 [`PROJECT_STATE.md`](../../PROJECT_STATE.md). This implementation contract

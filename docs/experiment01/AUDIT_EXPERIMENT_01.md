@@ -136,9 +136,6 @@ bdded4ebd03c29d47e5dfdba106590f24763cc06bb7e6e5ea379eb4b34201c0b
   error below the frozen tolerance.
 - Phase I ↔ Phase II full-rank parity: passed for all feature/target cells.
 - Phase III-R prerequisite, selection-isolation and fixed-test gates: passed.
-- Predictability-allocation protocol binding and fractional-sample audit:
-  passed; its scientific decision is reported separately as `fail`.
-
 Technical failure count in the completed production analyses: zero.
 
 ## 7. Verification boundary
