@@ -1,0 +1,60 @@
+{
+  "bootstrap_draws": 10000,
+  "bootstrap_seed": 20260801,
+  "crossfitted_spectral_control_sha256": null,
+  "crossfitted_spectral_control_status": "not_invoked_by_reduced_report",
+  "matched_spectral_ridge_sha256": "7a73c1fcc62b69bb4da50821bb46b1ae4539839f061e1e5ea0454889c4c08b8d",
+  "outcome": {
+    "outcome": "R3",
+    "phase1_outcome_unchanged": "A1",
+    "requirements": {
+      "analyzed_low_budget_labels": [
+        "b_1_4",
+        "b_1_2"
+      ],
+      "ceilings_meaningful": true,
+      "full_whitened_encoder_gap_means": {
+        "0": 4.692356626927102,
+        "1": 5.2814637547446335,
+        "2": 4.9044829429059655
+      },
+      "full_whitened_low_budget_mean_gap": 4.9594344415259,
+      "full_whitened_mlp_robust_adjacent": true,
+      "native_encoder_gap_means": {
+        "0": 1.2768411854630035,
+        "1": 1.7423459793309604,
+        "2": 1.5712472605087682
+      },
+      "native_low_budget_mean_gap": 1.5301448084342442,
+      "native_mlp_robust_adjacent": true,
+      "native_reader_within_cell_sd": 0.8125801818649534,
+      "reader_attenuation": -1.1937372195713403,
+      "reader_variance_dominates_native_gap": false,
+      "ridge_native_low_budget_mean_gap": 0.6975059705342634,
+      "ridge_native_robust_adjacent": true,
+      "whitening_attenuation_within_mlp": -2.241153656954047
+    },
+    "stability": {
+      "R1": true,
+      "R2": false,
+      "R3": true
+    }
+  },
+  "phase1_results_sha256": "ecf4e410c595baa32d06a1998bbd5151794d02ff141499af3c1f56268e110ffb",
+  "phase2_manifest_sha256": "1a30b67f6739a1a0440eae1866ee55f72cddf94248e5edf336a7e605461144c2",
+  "phase3_results_sha256": "f31fe3926fe8ff5512a9f77069c233209b75c3b9c73f348e3464176c2a9e190e",
+  "protocol_variant": "phase3_r_compute_feasible.v1",
+  "schema_name": "thesis.experiment01.phase3.summary",
+  "schema_version": 1,
+  "selection_manifest_sha256": "30b6e84a66aff03ea73e040b55d408cb400e7b8cda38fd2cd114e5068ce035c8",
+  "status": "complete",
+  "tables": {
+    "phase3_capacity_sensitivity.parquet": "08cda526160e70b247c84247688a1e5750e05b3359780ddd5a7e636c2a010e82",
+    "phase3_ceiling_and_lift.parquet": "d64fe81f7e906977c13b58132c0ec221f2bee74ae73a88dabe4e175d344dd4ce",
+    "phase3_normalized_recovery.parquet": "f31fe3926fe8ff5512a9f77069c233209b75c3b9c73f348e3464176c2a9e190e",
+    "phase3_reader_conditioning_interaction.parquet": "71d6e47fe70785764ee7a3f66708c9fa6f79dfaa1d2ad6f51f62226b63981a4f",
+    "phase3_reader_gap.parquet": "2d94864828f7811961ea95899a0588739ebc0839b01af139e46fd8bacd2f4bca",
+    "phase3_spectral_bands.parquet": "f07c262ef240b6c63f5265633783e33dd8d9e7a6c829cf88582f115a8c2443f5",
+    "phase3_variance_components.parquet": "894604be69f174eaf946389a13e22282052372505f61f9546ee67c2b75eaeae1"
+  }
+}

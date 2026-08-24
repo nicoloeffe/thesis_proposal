@@ -1,0 +1,11 @@
+# CPU-compatible analysis/test environment. For production GPU runs install the
+# matching PyTorch ROCm build described in docs/REPRODUCIBILITY.md.
+matplotlib==3.10.1
+numpy==2.2.4
+pandas==2.2.3
+psutil==7.0.0
+pyarrow==24.0.0
+pytest==9.1.1
+scikit-learn==1.6.1
+scipy==1.15.2
+torch==2.9.1

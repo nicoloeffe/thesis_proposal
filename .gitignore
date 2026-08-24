@@ -1,0 +1,26 @@
+# Large local datasets and experiment artifacts
+data/
+checkpoints/
+validation/
+logs/
+dist/
+
+# Python and test/tool caches
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Compatibility names for local exploratory outputs
+out_id/
+out_id_sweep/
+log.out
+
+# Bulk artifacts must live under the ignored directories above
+*.npz
+*.pt
+*.csv
+*.log

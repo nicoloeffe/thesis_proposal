@@ -1,0 +1,51 @@
+{
+  "aggregation": "mean target R2 over 12 independent directional targets within encoder seed, then mean over three encoder seeds",
+  "gate": "full_train/last_concat512/full_rank_raw/min_norm_ols_raw/directional",
+  "legacy_evaluation_split_name": "val",
+  "passed": true,
+  "post_p0_inputs_verified": true,
+  "results": {
+    "jepa_horizon": {
+      "absolute_difference": 2.9254396631789303e-05,
+      "expected": 0.2111,
+      "observed": 0.2111292543966318,
+      "passed": true,
+      "per_encoder_seed": [
+        {
+          "aggregate_directional_r2": 0.21550615641138993,
+          "encoder_seed": 0
+        },
+        {
+          "aggregate_directional_r2": 0.20817414337744664,
+          "encoder_seed": 1
+        },
+        {
+          "aggregate_directional_r2": 0.20970746340105886,
+          "encoder_seed": 2
+        }
+      ],
+      "tolerance": 0.005
+    },
+    "supervised": {
+      "absolute_difference": 3.5571420161306655e-05,
+      "expected": 0.3756,
+      "observed": 0.3756355714201613,
+      "passed": true,
+      "per_encoder_seed": [
+        {
+          "aggregate_directional_r2": 0.3750951730882015,
+          "encoder_seed": 0
+        },
+        {
+          "aggregate_directional_r2": 0.37471965090159026,
+          "encoder_seed": 1
+        },
+        {
+          "aggregate_directional_r2": 0.37709189027069207,
+          "encoder_seed": 2
+        }
+      ],
+      "tolerance": 0.005
+    }
+  }
+}

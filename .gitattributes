@@ -1,0 +1,4 @@
+# Preserve byte-identical frozen/publication documents, including Markdown
+# hard line breaks encoded as trailing spaces.
+docs/experiment01/SPEC_EXPERIMENT_01_SAMPLE_EFFICIENCY_20260730.md -whitespace
+docs/results/** -whitespace

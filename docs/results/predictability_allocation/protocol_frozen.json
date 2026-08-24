@@ -1,0 +1,147 @@
+{
+  "analysis": {
+    "alpha_grid": [
+      0.0,
+      1e-08,
+      2.511886431509582e-08,
+      6.30957344480193e-08,
+      1.584893192461114e-07,
+      3.981071705534969e-07,
+      1e-06,
+      2.5118864315095823e-06,
+      6.309573444801943e-06,
+      1.584893192461114e-05,
+      3.9810717055349695e-05,
+      0.0001,
+      0.0002511886431509582,
+      0.0006309573444801943,
+      0.001584893192461114,
+      0.003981071705534978,
+      0.01,
+      0.025118864315095822,
+      0.06309573444801943,
+      0.15848931924611143,
+      0.39810717055349776,
+      1.0,
+      2.5118864315095824,
+      6.309573444801943,
+      15.848931924611174,
+      39.810717055349855,
+      100.0,
+      251.18864315095823,
+      630.9573444801943,
+      1584.8931924611175,
+      3981.0717055349855,
+      10000.0
+    ],
+    "feature_chunk_rows": 8192,
+    "full_mass_floor": 1e-12,
+    "haar_draws": 999,
+    "haar_seed": 20260818,
+    "raw_chunk_rows": 2048,
+    "raw_cv_folds": 5,
+    "raw_cv_seed": 20260818,
+    "raw_input": "train_only_normalized_full_window_K20_flattened",
+    "ridge_regularization": "lambda=alpha*trace(covariance)/D",
+    "sample_contract": {
+      "all_seven_stocks_each_split": true,
+      "fit_selected_endpoints_only": true,
+      "full_dataset_fit_forbidden": true,
+      "minimum_train_rows_over_dimension": 100.0,
+      "minimum_train_rows_per_stock": 10000,
+      "minimum_train_stock_days": 1000,
+      "minimum_valid_stock_day_coverage": 0.99,
+      "minimum_validation_rows_per_stock": 5000,
+      "minimum_validation_stock_days": 100,
+      "n_dataset_rows": 8039246,
+      "n_train": 100000,
+      "n_valid_total": 7323510,
+      "n_validation": 50000,
+      "note": "the compressed source NPZ may be opened to gather the frozen endpoint windows; covariance, cross-covariance, PCA and ridge are fit only on the selected endpoints",
+      "selected_fraction_max": 0.05,
+      "selected_fraction_min": 0.01,
+      "stock_day_disjoint": true
+    },
+    "top_k": 8
+  },
+  "analysis_version": "1.0",
+  "changes_phase1_phase2_phase3": false,
+  "estimands": {
+    "M_j": "F_top_k=M(top_k)/M(D_valid)",
+    "P_j": "validation R2 of trace-normalized ridge on the exact normalized raw K=20 LOB window; alpha selected per target by grouped cross-validation inside train",
+    "haar_null": "matched distribution of F=M(Q)/M(D_valid)",
+    "null_percentile": "(1 + count(F_haar <= F_top_k))/(B + 1)"
+  },
+  "freeze": {
+    "approved_at_utc": "2026-08-19T04:13:08.352705+00:00",
+    "draft_payload_sha256": "ceda875ee95307d2817aba72853de68cd131f7631e81ce8a4ab07f879d5939c1",
+    "input_inventory_sha256": "7ddd24783f483f4f8c827881b892083e753fafe010bb64c2fa4fd2607b645357",
+    "outcomes_read_before_freeze": false,
+    "scientific_approver": "user_direct_authorization_2026-08-19",
+    "scientific_design_approved": true
+  },
+  "interpretation": {
+    "family_analysis": "sensitivity analysis; n=3 family medians has no standalone inferential p-value",
+    "not_identified": [
+      "a discontinuous SNR threshold",
+      "Bayes predictability",
+      "causal contribution of the training objective alone"
+    ],
+    "supported_if_passed": "predictability-dependent top-spectral allocation with low-P anti-alignment for the frozen encoders"
+  },
+  "schema_name": "thesis.experiment01.predictability_allocation",
+  "schema_version": 1,
+  "scientific_status": "prospective_after_historical_exploration",
+  "scope": {
+    "branches": [
+      "supervised",
+      "jepa_horizon",
+      "jepa_masked"
+    ],
+    "confirmatory_contrast": [
+      "jepa_horizon",
+      "supervised"
+    ],
+    "encoder_seeds": [
+      0,
+      1,
+      2
+    ],
+    "jepa_masked_role": "descriptive_only",
+    "readout": "last_concat512",
+    "target_families": [
+      "imbalance",
+      "depth",
+      "timing"
+    ],
+    "target_names": [
+      "d_imbalance_top5@1",
+      "d_imbalance_top5@5",
+      "d_imbalance_top5@10",
+      "d_imbalance_top5@20",
+      "d_imbalance_all@1",
+      "d_imbalance_all@5",
+      "d_imbalance_all@10",
+      "d_imbalance_all@20",
+      "d_log_depth_top5@1",
+      "d_log_depth_top5@5",
+      "d_log_depth_top5@10",
+      "d_log_depth_top5@20",
+      "d_log_depth_all@1",
+      "d_log_depth_all@5",
+      "d_log_depth_all@10",
+      "d_log_depth_all@20",
+      "time_to_next_mid_move"
+    ]
+  },
+  "status": "frozen",
+  "thresholds": {
+    "approval_status": "approved_before_outcome_access",
+    "below_null_quantile": 0.05,
+    "delta_rho_min_mean": 0.3,
+    "low_predictability_fraction": 0.3333333333333333,
+    "max_supervised_below_null_low_p": 0,
+    "min_horizon_below_null_low_p": 2,
+    "rho_horizon_min_each_seed": 0.6
+  }
+}

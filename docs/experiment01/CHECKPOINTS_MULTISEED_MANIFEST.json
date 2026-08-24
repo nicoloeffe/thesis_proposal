@@ -1,0 +1,101 @@
+{
+  "schema_name": "thesis.experiment01.canonical_checkpoints",
+  "schema_version": 1,
+  "status": "complete",
+  "selection_rule": "epoch 20 for each frozen arm and encoder seed",
+  "source_bundle_manifest": "validation/experiment01_bundle_20260730/manifest.json",
+  "source_bundle_manifest_sha256": "bdded4ebd03c29d47e5dfdba106590f24763cc06bb7e6e5ea379eb4b34201c0b",
+  "stock_stats_sha256": "0938cfda578710436220d0a31fd5d6101c496dafa1512784a4dddef3a44f7900",
+  "canonical_file_count": 9,
+  "canonical_size_bytes": 84199395,
+  "full_local_training_directory": {
+    "path": "checkpoints/multiseed",
+    "file_count": 210,
+    "approximate_size_gib": 1.8,
+    "distributed": false,
+    "reason": "contains redundant intermediate epochs, best and last aliases"
+  },
+  "checkpoints": [
+    {
+      "id": "jepa_horizon_seed0_ep020",
+      "arm": "jepa_horizon",
+      "seed": 0,
+      "epoch": 20,
+      "path": "checkpoints/multiseed/jepa_horizon/seed0/epoch_020.pt",
+      "size_bytes": 10562059,
+      "sha256": "756aa9dfd88b65eb5cfabca8e2d93c6fefa52994e39ae321f3ad23435f5ea619"
+    },
+    {
+      "id": "jepa_horizon_seed1_ep020",
+      "arm": "jepa_horizon",
+      "seed": 1,
+      "epoch": 20,
+      "path": "checkpoints/multiseed/jepa_horizon/seed1/epoch_020.pt",
+      "size_bytes": 10562059,
+      "sha256": "fa3fc130f3421895130ea2174a88f698fb7db1692f8de6d76368153d2a3a096a"
+    },
+    {
+      "id": "jepa_horizon_seed2_ep020",
+      "arm": "jepa_horizon",
+      "seed": 2,
+      "epoch": 20,
+      "path": "checkpoints/multiseed/jepa_horizon/seed2/epoch_020.pt",
+      "size_bytes": 10562059,
+      "sha256": "c4a5d3c011ff79b1cc887f0f7045f55aba043ecacd0b054280a470507f0b9ecc"
+    },
+    {
+      "id": "jepa_masked_seed0_ep020",
+      "arm": "jepa_masked",
+      "seed": 0,
+      "epoch": 20,
+      "path": "checkpoints/multiseed/jepa_masked/seed0/epoch_020.pt",
+      "size_bytes": 10560779,
+      "sha256": "4a20451e3ab47a3ba6dab14cbbaaa076027fb075a384f7ab749259492e57d189"
+    },
+    {
+      "id": "jepa_masked_seed1_ep020",
+      "arm": "jepa_masked",
+      "seed": 1,
+      "epoch": 20,
+      "path": "checkpoints/multiseed/jepa_masked/seed1/epoch_020.pt",
+      "size_bytes": 10560779,
+      "sha256": "75a74630448b0244e99df781e4c4db1140e79b9bc3d8dd9ccf54d88365b9289f"
+    },
+    {
+      "id": "jepa_masked_seed2_ep020",
+      "arm": "jepa_masked",
+      "seed": 2,
+      "epoch": 20,
+      "path": "checkpoints/multiseed/jepa_masked/seed2/epoch_020.pt",
+      "size_bytes": 10560779,
+      "sha256": "67ee7db0ee92b4402225e3d1161fe7c71d55c545cdbc72c1a5b115baddecb94d"
+    },
+    {
+      "id": "supervised_seed0_ep020",
+      "arm": "supervised",
+      "seed": 0,
+      "epoch": 20,
+      "path": "checkpoints/multiseed/supervised/seed0/epoch_020.pt",
+      "size_bytes": 6943627,
+      "sha256": "92657fe4c1b6c1ee1e3e0b0f3b31d1ca92980cb1c63cbe08c7c010c9cfd468db"
+    },
+    {
+      "id": "supervised_seed1_ep020",
+      "arm": "supervised",
+      "seed": 1,
+      "epoch": 20,
+      "path": "checkpoints/multiseed/supervised/seed1/epoch_020.pt",
+      "size_bytes": 6943627,
+      "sha256": "1ec5fa7df081e6c4c392a19c13a21bd24895507d13998efb68680aaa8424f8ff"
+    },
+    {
+      "id": "supervised_seed2_ep020",
+      "arm": "supervised",
+      "seed": 2,
+      "epoch": 20,
+      "path": "checkpoints/multiseed/supervised/seed2/epoch_020.pt",
+      "size_bytes": 6943627,
+      "sha256": "29ff331f3f531cdbba9c14a223b577014f03a97efe42fada9eec03737b68d7ed"
+    }
+  ]
+}

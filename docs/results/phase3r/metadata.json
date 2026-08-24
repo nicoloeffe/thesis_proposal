@@ -1,0 +1,86 @@
+{
+  "bootstrap_draws": 10000,
+  "bootstrap_seed": 20260801,
+  "compute_log_sha256": "4346aad3376f168744d6adabdc482ecd8560f36837c3a087938401b7bf4693b4",
+  "figures": [
+    {
+      "path": "figures/01_directional_raw_mlp_learning_curves.png",
+      "sha256": "feaa88f4c25c77035fd7f51cea7de34308bc67396164c830fe9e91522f6e0226",
+      "size_bytes": 139425
+    },
+    {
+      "path": "figures/02_directional_normalized_mlp_recovery.png",
+      "sha256": "b23300e4a33141edc91e374a0342d9328e63f238e31b15e806c01aec8b323343",
+      "size_bytes": 137057
+    },
+    {
+      "path": "figures/03_linear_vs_mlp_gap.png",
+      "sha256": "1f8af67c93ad54fe3db202e77a409f5c677ae7f213f3249c2ce4fa650c4070fe",
+      "size_bytes": 111003
+    },
+    {
+      "path": "figures/04_native_vs_whitened_mlp_gap.png",
+      "sha256": "88f54e36fcf53cd7b2afdf8e391e50ed0c01590da4aba246fe6a0119a4de5e95",
+      "size_bytes": 72988
+    },
+    {
+      "path": "figures/05_reader_conditioning_2x2.png",
+      "sha256": "85c31c19bf5f745ccc2b23f0d93a0b8a452b2f848f59301a34fd8ce91556fefa",
+      "size_bytes": 28691
+    },
+    {
+      "path": "figures/06_full_budget_ceiling_and_nonlinear_lift.png",
+      "sha256": "9b09a12021532b3da2cc47ae15d3be3087c2f8e5f9839147455ccf7d51de6fa2",
+      "size_bytes": 64248
+    },
+    {
+      "path": "figures/07_target_specificity_reader_gap.png",
+      "sha256": "2e6a7ff4a48e0be6422de3a6ae9ea6ca8be7e2b9191b2abcf80372fb469f871c",
+      "size_bytes": 91209
+    },
+    {
+      "path": "figures/08_reader_seed_variance.png",
+      "sha256": "3a2eac33d3a97481f1baa0e17fe4559024723a4d1aa25e9a720255cb88f05564",
+      "size_bytes": 49234
+    },
+    {
+      "path": "figures/09_encoder_specific_mlp_curves.png",
+      "sha256": "759ffbd9ca86976ec41d7aefba04b7ca537c19b1a97befb212d2ac910ab8bc93",
+      "size_bytes": 91027
+    },
+    {
+      "path": "figures/10_equal_dimensional_spectral_bands.png",
+      "sha256": "a648c30b6fcd03fc567ef494a24251238c1b326dcd343524f39463d68fd2ccf0",
+      "size_bytes": 52715
+    },
+    {
+      "path": "figures/11_head_deep_full_mlp.png",
+      "sha256": "7f4a1fb372bab43a43d2cc786992ad284e530b4c882c8124548cc94630537789",
+      "size_bytes": 41712
+    },
+    {
+      "path": "figures/12_branch_specific_whitening_effects.png",
+      "sha256": "5526e765188c87665f8e36cc5bb0dcf345da059a596f21a44786fc7e778e09e8",
+      "size_bytes": 101801
+    },
+    {
+      "path": "figures/14_ceiling_eligibility_map.png",
+      "sha256": "c4ad81f324a4a1353b8dc61d156332a2e8d9e33aaecead02206ab792618854f2",
+      "size_bytes": 93421
+    }
+  ],
+  "phase1_outcome_unchanged": "A1",
+  "phase1_results_sha256": "ecf4e410c595baa32d06a1998bbd5151794d02ff141499af3c1f56268e110ffb",
+  "phase2_manifest_sha256": "1a30b67f6739a1a0440eae1866ee55f72cddf94248e5edf336a7e605461144c2",
+  "phase3_outcome": "R3",
+  "protocol_variant": "phase3_r_compute_feasible.v1",
+  "reports": {
+    "CHANGELOG_PHASE3.md": "760336b108349c7db44421d948d4e42688ec03c079c7d583272d4e986e66a254",
+    "REPORT_EXPERIMENT_01_PHASE3.md": "cc8ab2450820bce93e4e8fefbe370cf430db0220884a7620db915bda9cb2a5d4",
+    "SUMMARY_NARRATIVE_EXPERIMENT_01_PHASE3.md": "86f9c82c76744131956d571896f88b72b55d9debc8e7103b8819f022b79dd9d0"
+  },
+  "schema_name": "thesis.experiment01.phase3.metadata",
+  "schema_version": 1,
+  "selection_manifest_sha256": "30b6e84a66aff03ea73e040b55d408cb400e7b8cda38fd2cd114e5068ce035c8",
+  "status": "complete"
+}
