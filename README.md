@@ -111,9 +111,10 @@ The three diagnostic phases answer complementary questions:
 
 1. **The finite-sample penalty is descriptively largest for direction.** The normalized Phase-I
    gap is `0.5460` for direction, versus `0.1838` for volatility and `0.1528`
-   for timing. The directional penalty is therefore roughly 3–3.5 times the
-   control gaps. This ratio is not an independence-adjusted target-block
-   interaction test.
+   for timing. The normalized directional/control ratios are `2.97×/3.57×`;
+   on the raw-R² scale they are `1.99×/2.35×`. The magnitude is therefore
+   scale-dependent, and neither comparison is an independence-adjusted
+   target-block interaction test.
 
 2. **There is also a distinct linear ceiling gap.** Under the primary readout,
    the robust supervised–horizon-JEPA operational ceiling difference is about
@@ -126,30 +127,34 @@ The three diagnostic phases answer complementary questions:
    earlier in the spectrum.
 
 4. **Whitening helps, but the effect is not low-rank.** Whitening the leading
-   `128` components halves the Phase-I gap without eliminating it. Loss of
-   statistical robustness requires nearly complete whitening
-   (`k_nonrobust = 508`). The result does not support the claim that the problem
-   is concentrated in a handful of principal components.
+   `128` components halves the Phase-I gap without eliminating it. At the
+   historical technical field `k_nonrobust = 508`, both decisive-budget gaps
+   remain positive but fall below the compound preregistered effect criterion;
+   the mean gap has been reduced by `92.6%`. The result does not support the
+   claim that the problem is concentrated in a handful of principal components.
 
 5. **Temporal pooling exposes an encoder-specific fragility.** Horizon-JEPA
    directional $R^2$ falls from `0.2199` on `last_concat512` to `0.0701` on
    `meanK_concatS`; supervised remains approximately stable
    (`0.3853` to `0.3941`).
 
-6. **A nonlinear reader raises operational performance, while the selected low-budget MLP
-   remains unstable.** Phase III-R is technically classified `R3`: the frozen
-   MLP protocol raises the horizon-JEPA full-budget ceiling, including to
-   `0.9119` of supervised after full whitening, but its low-budget raw
-   directional R² is often negative. The resulting normalized gaps are
-   reader-specific diagnostics, not evidence for a general nonlinear
-   accessibility law.
+6. **A nonlinear reader raises full-budget operational performance; the
+   low-budget mechanism is not identified.** The frozen MLP raises the
+   horizon-JEPA directional ceiling to `0.3448` natively and `0.3609` after
+   whitening, respectively `0.8602/0.9119` of supervised. At `b_1_4`, however,
+   both full-whitened branches have negative R² in every result cell. The
+   preregistered rule still emits the secondary technical label `R3`, but its
+   normalized low-budget gap cannot establish persistence beyond conditioning.
 
-7. **Target-aligned supervision produces a partial dose response.** In F16 all
-   12 primary supervised-minus-horizon gaps are positive with grouped
-   intervals excluding zero. Accessibility, pooling loss and whitening-k128
-   move monotonically with supervision volume across seeds, whereas role
-   retention and top-k predictive mass do not. F16 therefore supports no
-   single all-metrics geometric mechanism.
+7. **Target-aligned supervision produces a rapid early transition.** In F16
+   all 12 primary supervised-minus-horizon gaps are positive with grouped
+   intervals excluding zero, and all 84 leave-one-stock-out gaps are positive.
+   At the minimum budget (`7,116` rows, `0.108%` of full train), several
+   geometry diagnostics have already completed 82–89% of their
+   horizon→supervised path. After deduplicating `whitening_k128`, which is
+   empirically the same diagnostic as Axis B, the preregistered smooth rule
+   fails (`3/5` distinct families). F16 supports an early transition followed
+   by saturation, not a verified smooth dose-response law.
 
 ![Predictive mass across the covariance spectrum](docs/results/phase2/figures/01_predictive_mass.png)
 
@@ -176,19 +181,21 @@ The broader mathematical framing and proposed follow-up programme are in
 - [Phase II — spectral localization](docs/results/phase2/REPORT_EXPERIMENT_01_PHASE2.md)
 - [Phase III-R — reader-relative accessibility](docs/results/phase3r/REPORT_EXPERIMENT_01_PHASE3.md)
 - [T2 — token-role matched-null diagnostic](docs/results/token_role/REPORT_EXPERIMENT_01_TOKEN_ROLE.md)
-- [F16 — label-matched supervised dose response](docs/results/f16/REPORT_EXPERIMENT_01_F16.md)
+- [F16 — label-matched supervision diagnostic](docs/results/f16/REPORT_EXPERIMENT_01_F16.md)
 - [What we did and did not establish](docs/research/COSA_ABBIAMO_FATTO_E_COSA_NO.md)
 - [Supervisor reading guide](docs/review/SUPERVISOR_READING_GUIDE.md)
 - [Training protocol and nine-checkpoint audit](docs/experiment01/TRAINING_PROTOCOL.md)
+- [Phase-I claim map](docs/review/PHASE1_CLAIM_MAP.md)
+- [F16 claim map](docs/review/F16_CLAIM_MAP.md)
 - [F16 label-matched dose-response preregistration](docs/experiment01/SPEC_EXPERIMENT_01_F16_LABEL_MATCHED.md)
 - [Frozen Experiment 01 specification](docs/experiment01/SPEC_EXPERIMENT_01_SAMPLE_EFFICIENCY_20260730.md)
 - [Current project state](PROJECT_STATE.md)
 
 F16 is complete under its frozen protocol. All 12 supervised training cells
 finished without failure; checkpoint and alpha selections were frozen before
-the one-time fixed-test evaluation. Label-matched accessibility changes
-smoothly with supervision volume, while role retention and top-k predictive
-mass do not show the same all-seed monotonicity. The Phase-I outcome remains
+the one-time fixed-test evaluation. A read-only corrective reaggregation
+preserves the positive label-matched gaps but rejects the broader smooth-volume
+claim after family deduplication. Frozen results and the Phase-I outcome remain
 unchanged.
 
 The lightweight publication package in [`docs/results/`](docs/results/README.md)

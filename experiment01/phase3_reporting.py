@@ -1505,6 +1505,35 @@ def write_phase3_reports(
             "negative raw fraction",
         ],
     )
+
+    def primary_metric(
+        budget: str, branch: str, transform: str
+    ) -> pd.Series:
+        selected = report_metrics.loc[
+            report_metrics["target_block"].eq("directional")
+            & report_metrics["budget_label"].eq(budget)
+            & report_metrics["branch"].eq(branch)
+            & report_metrics["transform"].eq(transform)
+        ]
+        if len(selected) != 1:
+            raise ExperimentIntegrityError(
+                "Phase-III primary report metric is not unique"
+            )
+        return selected.iloc[0]
+
+    minimum_budget = str(requirements["analyzed_low_budget_labels"][0])
+    minimum_native_supervised = primary_metric(
+        minimum_budget, "supervised", "native"
+    )
+    minimum_native_horizon = primary_metric(
+        minimum_budget, "jepa_horizon", "native"
+    )
+    minimum_white_supervised = primary_metric(
+        minimum_budget, "supervised", "full_whitened"
+    )
+    minimum_white_horizon = primary_metric(
+        minimum_budget, "jepa_horizon", "full_whitened"
+    )
     gap_table = pd.read_parquet(root / "phase3_reader_gap.parquet")
     gap_summary = gap_table.loc[gap_table["table_level"] == "block_summary"]
     specificity = (
@@ -1531,6 +1560,23 @@ def write_phase3_reports(
         )
         .reset_index()
     )
+
+    def ceiling_metric(branch: str, transform: str) -> pd.Series:
+        selected = ceiling_summary.loc[
+            ceiling_summary["branch"].eq(branch)
+            & ceiling_summary["target_block"].eq("directional")
+            & ceiling_summary["transform"].eq(transform)
+        ]
+        if len(selected) != 1:
+            raise ExperimentIntegrityError(
+                "Phase-III directional ceiling metric is not unique"
+            )
+        return selected.iloc[0]
+
+    ceiling_horizon_native = ceiling_metric("jepa_horizon", "native")
+    ceiling_horizon_white = ceiling_metric("jepa_horizon", "full_whitened")
+    ceiling_supervised_native = ceiling_metric("supervised", "native")
+    ceiling_supervised_white = ceiling_metric("supervised", "full_whitened")
     ceiling_lines = "\n".join(
         f"- `{row.branch}/{row.target_block}/{row.transform}`: ceiling {_format_num(row.mlp_test_r2)}, "
         f"lift {_format_num(row.nonlinear_lift)}, supervised ratio {_format_num(row.mlp_to_supervised_ratio)}"
@@ -1588,7 +1634,11 @@ Phase III is governed by the later definitive specification
 [`SPEC_EXPERIMENT_01_PHASE3_READER_ACCESSIBILITY_20260801.md`](https://github.com/nicoloeffe/thesis_proposal/blob/main/docs/experiment01/SPEC_EXPERIMENT_01_PHASE3_READER_ACCESSIBILITY_20260801.md)
 (SHA-256 `78ca15821ac40355c35e5f40ecaf5086f5e6bbb6f339255a85b13fc7d952a151`).
 It replaces the eligibility rule in the earlier optional MLP section; the
-executed `b_1_4` floor is protocol-eligible.
+executed `b_1_4` floor is protocol-eligible. The earlier 2026-07-30 optional
+MLP section also required at least eight full days per stock and prohibited
+interpretation below that floor. The later amendment removed that condition;
+formal eligibility therefore does not erase the earlier warning about the
+severely overparameterized low-budget regime.
 
 Phase III v1 was terminated before selection freeze and before any production
 test access with status `{termination['status']}` and
@@ -1637,16 +1687,25 @@ Widths 128 and 512 are descriptive sensitivity checks at the preregistered minim
 
 {amendment_section}
 
-## Preregistered outcome
+## Primary scientific result and identifiability
 
-The directional `last_concat512` primary outcome is **{result}: {outcome_text}**. Phase-I technical outcome **{phase1_outcome} remains frozen and unchanged**. Phase III changes only the reader-relative diagnosis, not the Phase-I result. For R3 specifically, “persists” refers only to the frozen selected MLP family and transforms; it is not a claim about nonlinear readers in general.
+The interpretable Phase-III-R result is the full-budget operational ceiling. On directional `last_concat512`, horizon-JEPA reaches {_format_num(ceiling_horizon_native.mlp_test_r2)} in native coordinates and {_format_num(ceiling_horizon_white.mlp_test_r2)} after full whitening: respectively {_format_num(ceiling_horizon_native.mlp_to_supervised_ratio)} and {_format_num(ceiling_horizon_white.mlp_to_supervised_ratio)} of the matched supervised MLP. The nonlinear lifts over frozen ridge are {_format_num(ceiling_horizon_native.nonlinear_lift)} and {_format_num(ceiling_horizon_white.nonlinear_lift)}. These are operational reader results, not Bayes-content estimates.
+
+The low-budget conditioning claim is **not identified in the executed regime**. At `{minimum_budget}` after full whitening, supervised has mean raw R² {_format_num(minimum_white_supervised.raw_test_r2_mean)} with negative-score fraction {_format_num(minimum_white_supervised.negative_raw_test_r2_fraction)}, while horizon-JEPA has mean {_format_num(minimum_white_horizon.raw_test_r2_mean)} with negative-score fraction {_format_num(minimum_white_horizon.negative_raw_test_r2_fraction)}. Both readers are worse than the test-mean baseline in every result cell. Their normalized-recovery difference therefore cannot isolate representation accessibility from joint reader optimization and scale failure.
+
+In native coordinates at the same budget, supervised has mean raw R² {_format_num(minimum_native_supervised.raw_test_r2_mean)} and horizon-JEPA {_format_num(minimum_native_horizon.raw_test_r2_mean)}, with negative-score fractions {_format_num(minimum_native_supervised.negative_raw_test_r2_fraction)} and {_format_num(minimum_native_horizon.negative_raw_test_r2_fraction)}. This is a real result for the exact frozen reader, but it does not establish a general nonlinear-reader mechanism.
+
+## Frozen preregistered technical classification
+
+Applied literally to the normalized recoveries, the frozen classifier returns **{result}: {outcome_text}**. This label is retained as a secondary technical audit result; it is not promoted to the scientific conclusion above. Phase-I technical outcome **{phase1_outcome} remains frozen and unchanged**.
 
 The frozen native-ridge low-budget normalized gap is {_format_num(requirements['ridge_native_low_budget_mean_gap'])}. The native-MLP gap is {_format_num(requirements['native_low_budget_mean_gap'])}, giving reader attenuation {_format_num(requirements['reader_attenuation'])}. The full-whitened MLP gap is {_format_num(requirements['full_whitened_low_budget_mean_gap'])}, giving within-MLP whitening attenuation {_format_num(requirements['whitening_attenuation_within_mlp'])}.
 
 The two attenuation quantities above are algebraic outputs of the frozen
-classification rule, not stable effect-size estimates: low-budget raw R² is
-negative in many primary cells. Raw scores and ceiling eligibility therefore
-come before the normalized-gap interpretation.
+classification rule, not stable effect-size estimates: the full-whitened
+primary low-budget fits fail in both branches, and low-budget raw R² is also
+negative in many native horizon-JEPA cells. Raw scores and fit usability
+therefore come before the normalized-gap interpretation.
 
 ## Raw and normalized budget metrics
 
@@ -1664,15 +1723,15 @@ serialized as `phase3_report_metrics.parquet`.
 - The production bundle, Phase-I subsets, Phase-I transforms, Phase-II caches and canonical checkpoints passed their hash gates.
 - The historical MLP gate reproduced its recorded branches within absolute tolerance {historical_tolerances[0]:g}; that historical reader used coordinate-wise standardization and is not the Phase-III primary reader.
 
-## New Phase-III reader result
+## Exact Phase-III reader and observed low-budget contrast
 
-The primary reader is exactly `{reader_protocol['architecture']}`, with no coordinate-wise native input standardization, BatchNorm or LayerNorm. Weight decay was selected from `{json.dumps(reader_protocol['weight_decay_grid'])}` on the fixed validation split. The selection manifest was frozen and hashed before one-shot test inference.
+The primary reader is exactly `{reader_protocol['architecture']}`, with no coordinate-wise native input standardization, BatchNorm or LayerNorm. Weight decay was selected from `{json.dumps(reader_protocol['weight_decay_grid'])}` on the fixed validation split, while learning rate remained fixed. The selection manifest was frozen and hashed before one-shot test inference. Protocol eligibility of `{minimum_budget}` does not by itself guarantee an interpretable raw-score regime.
 
 Encoder-specific native directional gaps are `{json.dumps(requirements['native_encoder_gap_means'], sort_keys=True)}`. Encoder-specific full-whitened gaps are `{json.dumps(requirements['full_whitened_encoder_gap_means'], sort_keys=True)}`. Meaningful-ceiling status is `{requirements['ceilings_meaningful']}`.
 
 ## Conditioning and reader decomposition
 
-Phase III separates: (1) the operational full-budget ceiling of each reader, (2) finite-sample recovery relative to its own target-wise ceiling, (3) dependence on the invertible train-only whitening transform, and (4) dependence on enlarging the reader class from frozen ridge to the preregistered MLP. The reader-by-conditioning interaction is descriptive and does not change {result}.
+Phase III attempts to separate: (1) the operational full-budget ceiling of each reader, (2) finite-sample recovery relative to its own target-wise ceiling, (3) dependence on the invertible train-only whitening transform, and (4) dependence on enlarging the reader class from frozen ridge to the preregistered MLP. The first quantity is identified. The low-budget reader-by-conditioning decomposition is not, because the full-whitened reader fails for both branches. This post-hoc interpretability diagnosis does not rewrite the frozen {result} classifier output.
 
 ## Target specificity
 
@@ -1682,8 +1741,10 @@ Directional, volatility and timing results are reported separately. They are nev
 
 These normalized-gap summaries are descriptive. In particular, values above
 one are differences between normalized recoveries and must not be read as
-“times worse.” A target-block interaction requires grouped stock-day
-uncertainty, which is not present in the current aggregate artifacts.
+“times worse.” Negative raw R² in both full-whitened branches makes the
+low-budget control gaps unsuitable for a mechanistic specificity claim. A
+target-block interaction also requires grouped stock-day uncertainty, which is
+not present in the current aggregate artifacts.
 
 ## Spectral diagnostics
 
@@ -1705,10 +1766,13 @@ Full-budget MLP ceiling gaps, nonlinear lift over frozen ridge, MLP-to-supervise
 
 Equal MLP performance would not prove equal information, and a persistent MLP
 gap does not prove information loss or a general nonlinear-accessibility
-mechanism. Full whitening is a post-hoc train-only invertible coordinate
-transform, not a training-time encoder intervention. No claim is made that
-VICReg/SIGReg must reproduce it or that head-band failure proves tail
-causality.
+mechanism. The primary MLP is not input-standardized or scale-invariant and
+uses a fixed learning rate across native and whitened coordinates. Because the
+full-whitened low-budget fits have negative raw R² in both branches, Phase
+III-R cannot identify persistence beyond second-order conditioning. Full
+whitening is a post-hoc train-only invertible coordinate transform, not a
+training-time encoder intervention. No claim is made that VICReg/SIGReg must
+reproduce it or that head-band failure proves tail causality.
 
 The existing intervals resample encoder, subset and reader seeds and therefore
 measure computational robustness, not population generalization. Grouped
@@ -1721,9 +1785,11 @@ pretraining, so this phase cannot support an end-to-end label-efficiency claim.
 """
     narrative = f"""# {phase_title} — narrative summary
 
-{phase_title} assigns the frozen technical class **{result} ({outcome_text})** for the directional `last_concat512` comparison. The low-budget normalized gap changes from {_format_num(requirements['ridge_native_low_budget_mean_gap'])} for the frozen native ridge to {_format_num(requirements['native_low_budget_mean_gap'])} for the native MLP and {_format_num(requirements['full_whitened_low_budget_mean_gap'])} after full train-only whitening. These are normalized-gap differences, not multiplicative “times worse” statements; the raw R² distributions are reported alongside them. Phase-I **{phase1_outcome} remains unchanged**.
+The primary interpretable result is the full-budget MLP ceiling. For directional `last_concat512`, horizon-JEPA reaches {_format_num(ceiling_horizon_native.mlp_test_r2)} in native coordinates and {_format_num(ceiling_horizon_white.mlp_test_r2)} after full whitening, equal to {_format_num(ceiling_horizon_native.mlp_to_supervised_ratio)} and {_format_num(ceiling_horizon_white.mlp_to_supervised_ratio)} of the matched supervised MLP. This establishes reader-relative operational recoverability, not equal information or a Bayes ceiling.
 
-The empirical decomposition is reader-specific: full-budget operational ceiling, finite-sample accessibility relative to that ceiling, conditioning dependence under an invertible train-only transform, reader dependence, and spectral dependence. R3 is restricted to the selected MLP protocol and is not a claim about nonlinear readers generally. Volatility and timing remain separate controls. Spectral MLP performance is discussed only as consistent or inconsistent with Phase-II localization, never as recovery of predictive mass. Current intervals quantify computational robustness; grouped stock-day uncertainty is pending.
+The low-budget mechanism is not identified in the executed regime. At `{minimum_budget}` after full whitening, mean raw R² is {_format_num(minimum_white_supervised.raw_test_r2_mean)} for supervised and {_format_num(minimum_white_horizon.raw_test_r2_mean)} for horizon-JEPA, with negative-score fractions {_format_num(minimum_white_supervised.negative_raw_test_r2_fraction)} and {_format_num(minimum_white_horizon.negative_raw_test_r2_fraction)}. The normalized gap {_format_num(requirements['full_whitened_low_budget_mean_gap'])} is therefore a difference between failed fits, not stable evidence that difficulty persists beyond conditioning.
+
+Applying the unchanged preregistered rule still yields the frozen secondary technical class **{result} ({outcome_text})**. It is retained for auditability and does not alter Phase-I **{phase1_outcome}**. Volatility and timing remain separate descriptive controls; current intervals quantify computational robustness rather than grouped stock-day generalization.
 """
     if reduced:
         changelog = f"""# Experiment 01 Phase III-R — changelog
@@ -1736,7 +1802,9 @@ The empirical decomposition is reader-specific: full-budget operational ceiling,
 - Removed capacity sensitivity and redundant nonlinear spectral arms; frozen Phase II remains the detailed spectral analysis.
 - Reused only exact v1 selection cells after fingerprint and artifact-hash verification.
 - Preserved the MLP, optimizer, stopping schedule, weight-decay grid, splits, targets, metrics, thresholds, R1--R4 rules and Phase-I {phase1_outcome} outcome.
-- Reframed R3 as a technical result for the selected MLP family, added raw R² distributions beside normalized gaps, and labelled uncertainty as computational robustness.
+- Retained R3 as the frozen technical classifier output, but moved the identified full-budget ceiling to the scientific headline.
+- Marked the low-budget conditioning mechanism as not identified because both full-whitened branches have uniformly negative raw R² at the minimum budget.
+- Kept all raw R² distributions beside normalized gaps and labelled uncertainty as computational robustness.
 """
     else:
         changelog = """# Experiment 01 Phase III — changelog

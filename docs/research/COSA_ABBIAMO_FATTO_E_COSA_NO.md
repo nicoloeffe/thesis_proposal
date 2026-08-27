@@ -165,11 +165,11 @@ gli stock sono soltanto sette.
 
 | fase | domanda | operazione | risultato sintetico |
 |---|---|---|---|
-| Phase I | il segnale è più costoso da recuperare con poche etichette? | learning curves, ridge trace-normalized, whitening | sì, soprattutto per direzione; `A1` tecnico con gap di ceiling |
+| Phase I | il segnale è più costoso da recuperare con poche etichette? | learning curves, ridge trace-normalized, whitening | sì per il reader dichiarato; distinto gap di ceiling; `A1` è una label tecnica secondaria e threshold-sensitive |
 | Phase II | dove si trova la massa predittiva nello spettro? | PCA ladder, predictive mass, null Haar, bande | horizon direzionale è fortemente anti-allineato alle prime PC |
-| Phase III-R | il gap sopravvive a un reader più ricco e al whitening? | MLP nativo/full-whitened | il ceiling sale, ma il reader low-budget selezionato resta instabile; `R3` |
+| Phase III-R | il gap sopravvive a un reader più ricco e al whitening? | MLP nativo/full-whitened | il ceiling sale; il meccanismo low-budget non è identificato; `R3` resta una label tecnica |
 | T2 | l'asse di ruolo all-ones è eccezionale? | null Haar 4D con blocchi 128/384D matched | no: il null strutturato non viene rifiutato |
-| F16 | aumentando la supervisione target-aligned la geometria si sposta verso il supervised? | 12 nuovi encoder, quattro budget × tre seed | accessibilità, pooling e whitening mostrano dose-response; non tutte le metriche geometriche |
+| F16 | come cambia la rappresentazione sotto supervisione target-aligned crescente? | 12 nuovi encoder, quattro budget × tre seed | gap label-matched positivo; transizione già ampia al budget minimo e successiva saturazione, non legge smooth verificata |
 
 Phase III v1, che prevedeva 21.456 modelli, è stata fermata prima del freeze di
 selezione e prima dell'accesso al test perché sproporzionata. Non produce claim
@@ -188,9 +188,11 @@ dichiarato, non una differenza provata di informazione totale.
 ### 7.2 Penalità finite-sample più grande sul blocco direzionale
 
 Il gap normalizzato Phase I è `0,5460` per direzione, `0,1838` per volatilità e
-`0,1528` per timing. La differenza direzionale è descrittivamente circa
-3–3,5 volte i controlli. Non è però ancora un test d'interazione corretto per
-la dipendenza tra famiglie e per l'incertezza stock-day.
+`0,1528` per timing. I rapporti direzione/controllo sono `2,97×/3,57×` sulla
+scala normalizzata e `1,99×/2,35×` sulla scala R² grezza. Il segno della
+specificità descrittiva regge, ma la magnitudine è scale-dependent. Non è un
+test d'interazione corretto per la dipendenza tra famiglie e per l'incertezza
+stock-day.
 
 ### 7.3 Anti-allineamento spettrale direzionale
 
@@ -198,7 +200,9 @@ Su `last_concat512`, la massa predittiva cumulativa nelle prime 8 PC è
 `0,0001` per horizon-JEPA e `0,7518` per supervised; a 16 PC è `0,0064` contro
 `0,8742`. Per horizon-JEPA tutti i 100 sottospazi Haar superano top-PCA a
 `k=8` e `k=16` in tutti i seed. Per supervised top-PCA è al percentile 100 del
-null alle profondità riportate.
+null alle profondità riportate. Le code 0/1 archiviate sono frazioni di
+superamento su 100 draw, con risoluzione 0,01; non sono p-value continui né
+decisioni inferenziali di popolazione.
 
 Questa è forte evidenza di target–variance misalignment nel sistema studiato.
 Non implica che “il segnale vive nella coda” come singolo blocco causale: a
@@ -215,19 +219,30 @@ dinamica temporale causale interna.
 
 ### 7.5 Whitening profondo, non correzione di poche PC
 
-A `k=128` il whitening riduce il gap decisivo del `55,6%` senza eliminarlo. La
-non-robustezza compare solo a `k=508`, la massima profondità valida testata. Il
-risultato è incompatibile con la narrazione “il problema è concentrato in
+A `k=128` il whitening riduce il gap decisivo del `55,6%` senza eliminarlo. A
+`k=508`, la massima profondità valida testata, la riduzione media raggiunge il
+`92,6%`. I gap restano positivi e i lower bound non attraversano zero; fallisce
+invece a entrambi i budget il criterio composto `lower > 0` e
+`mean ≥ δ=0,10`. `k_nonrobust` è quindi un nome tecnico storico per una
+transizione di effect size, non per la perdita della separazione statistica.
+Il risultato è incompatibile con la narrazione “il problema è concentrato in
 poche PC principali”.
+
+Al threshold primario `δ=0,10` il classificatore tecnico restituisce `A1`; le
+sensitivity preregistrate danno `D` a `δ=0,05` e `A1` a `δ=0,15`. Questa label
+secondaria è quindi threshold-sensitive senza cambiare la curva osservata.
 
 ### 7.6 Un reader più ricco recupera performance operativa
 
 Il ceiling MLP horizon-JEPA direzionale raggiunge `0,3448` in coordinate native
 e `0,3609` dopo full whitening, rispettivamente `0,8602` e `0,9119` del
 supervised. Questi risultati mostrano che il gap lineare non equivale ad
-assenza di segnale operativo. I punteggi low-budget dell'MLP sono però spesso
-negativi; le recovery normalizzate risultanti non sono stime stabili di una
-legge di accessibilità non lineare.
+assenza di segnale operativo. Nel regime low-budget full-whitened, però, a
+`b_1_4` entrambi i rami hanno il 100% di R² negativi (`-0,416` supervised,
+`-2,416` horizon-JEPA in media). Il gap normalizzato che produce `R3` confronta
+quindi due fit falliti e non identifica una difficoltà persistente oltre il
+conditioning. `R3` resta registrato come output tecnico della regola congelata,
+non come conclusione meccanicistica.
 
 ### 7.7 Il meccanismo token-role privilegiato non è supportato
 
@@ -238,7 +253,7 @@ il complemento 384D insolitamente forte in tutti i seed. La differenza di
 proiezione rimane un fatto operativo; la spiegazione “il segnale è
 intrinsecamente relazionale nei contrasti” non è supportata.
 
-### 7.8 La supervisione target-aligned produce un dose-response parziale
+### 7.8 La supervisione target-aligned produce una transizione precoce
 
 F16 addestra quattro volumi di supervisione per tre seed. Tutti i 12 gap
 primari F16-supervised meno horizon-JEPA sono positivi, con intervalli grouped
@@ -247,9 +262,24 @@ che escludono zero e 84/84 confronti leave-one-stock-out positivi.
 Il criterio preregistrato “supervised-like at low volume” passa a `b_1`
 (28.446 righe). Significa che le coordinate normalizzate dichiarate superano
 la soglia preregistrata; non significa equivalenza statistica con il
-supervised canonico. Quattro famiglie su sei mostrano l'ordinamento monotono in
-tutti i seed: Axis A, Axis B, pooling loss e whitening-k128. Role retention e
-top-k predictive mass non lo mostrano.
+supervised canonico.
+
+Il precedente conteggio di quattro famiglie su sei non costituisce quattro
+evidenze indipendenti: `whitening_k128` replica quasi esattamente Axis B
+(massima differenza raw R² `0,000340`, correlazione `0,999991`). Dopo la
+deduplicazione passano tre famiglie distinte su cinque, meno delle quattro
+richieste dalla regola preregistrata. Inoltre Spearman `rho=0,8` su quattro
+budget consente una inversione adiacente: soltanto Axis A è strettamente
+monotona in tutti i seed. La dipendenza smooth dal volume non è quindi
+supportata.
+
+Il fatto nuovo e più informativo è la saturazione precoce. Le 7.116 righe del
+budget minimo sono lo `0,108%` del train completo, ma role retention, top-k
+predictive mass e perdita al pooling hanno già percorso in media l'82–89% del
+tragitto horizon→supervised. La forma osservata è una transizione rapida
+seguita da plateau e piccole inversioni. La specificità direzionale non è
+identificata perché la normalizzazione dei controlli usa gap di volatilità
+quasi nulli.
 
 ## 8. Che cosa non abbiamo stabilito
 
@@ -257,9 +287,9 @@ top-k predictive mass non lo mostrano.
 |---|---|---|
 | horizon-JEPA contiene meno informazione totale | non stabilita | nessun decoder universale o Bayes oracle |
 | supervised è end-to-end più label-efficient | non stabilita | ha già visto target downstream nel pretraining |
-| l'obiettivo JEPA causa l'anti-allineamento | non stabilita | confronto reale non isola tutti i fattori causali; F16 è solo una dose-response target-aligned |
+| l'obiettivo JEPA causa l'anti-allineamento | non stabilita | confronto reale non isola tutti i fattori causali; F16 varia insieme label volume, target exposure e traiettoria di ottimizzazione |
 | il whitening è un intervento causale sull'encoder | falso come descrizione | è una trasformazione post-hoc train-only |
-| poche PC spiegano il problema | non supportata | servono 128 PC per dimezzare il gap e 508 per perderne la robustezza |
+| poche PC spiegano il problema | non supportata | servono 128 PC per dimezzare il gap; a 508 resta positivo ma scende sotto la soglia pratica composta |
 | la banda 17:32 è povera e 33:64 è speciale | non verificata | confronto originale 16D contro 32D, quindi dimension-confounded |
 | il segnale vive in un complemento token-role speciale | non supportata | T2 non rifiuta il null Haar strutturato |
 | temporal pooling e role projection misurano lo stesso meccanismo | non stabilita | sono operatori distinti |
@@ -308,9 +338,9 @@ La formulazione più forte compatibile con tutte le evidenze è:
 > senza identificare informazione totale o il meccanismo causale di training.
 
 F16 aggiunge che l'esposizione supervisionata target-aligned modifica
-rapidamente alcune di queste proprietà con il volume di etichette, ma non le
-muove tutte in modo monotono e non dimostra specificità esclusiva per la
-direzione.
+rapidamente alcune di queste proprietà già al budget minimo. Non stabilisce
+una legge smooth del volume, non le muove tutte in modo monotono e non dimostra
+specificità esclusiva per la direzione.
 
 ## 11. Vincoli empirici per il simulatore
 
@@ -324,8 +354,9 @@ vincoli empirici sicuri da usare come target qualitativi sono:
 4. una trasformazione invertibile di conditioning può ridurre il gap;
 5. un reader più ricco può aumentare la performance senza provare uguaglianza
    di informazione;
-6. la quantità di supervisione target-aligned può essere un asse di selezione
-   della geometria.
+6. anche una piccola esposizione alla supervisione target-aligned può
+   selezionare rapidamente una geometria diversa; la forma continua della
+   dipendenza dal volume resta non identificata.
 
 Non va incorporato come fatto il privilegio dell'asse all-ones o del suo
 complemento. VICReg, SIGReg, topologia e soglie di predicibilità restano bracci

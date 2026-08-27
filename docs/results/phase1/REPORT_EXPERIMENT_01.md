@@ -1,6 +1,6 @@
 # Report — Experiment 01 Phase I
 
-## Primary scientific result: specificity across three diagnostics
+## Primary Phase-I result: reader-relative finite-sample accessibility
 
 The Phase-I result supports the following restricted statement: conditional on
 the frozen representations and a newly fitted reader, the supervised
@@ -26,15 +26,16 @@ as an additional A/B/D outcome.
 
 ### Finite-sample specificity
 
-The normalized-gap point summaries are:
+The table distinguishes normalized gaps over the frozen low-budget grid from
+raw-R² gaps averaged over the recorded decisive budgets:
 
-| target block | mean normalized finite-sample gap | directional / control |
-| --- | --- | --- |
-| directional | 0.5460 | — |
-| volatility | 0.1838 | 2.97× |
-| timing | 0.1528 | 3.57× |
+| target block | normalized gap (low-budget grid) | raw R² gap (decisive budgets) | normalized directional/control | raw directional/control |
+| --- | --- | --- | --- | --- |
+| directional | 0.5460 | 0.3053 | — | — |
+| volatility | 0.1838 | 0.1536 | 2.97× | 1.99× |
+| timing | 0.1528 | 0.1301 | 3.57× | 2.35× |
 
-The descriptive directional/control ratios are `2.97×` and `3.57×`. They are point summaries, not an independence-adjusted specificity test. Volatility and timing remain separate controls. These
+The descriptive directional/control ratios are `2.97×` and `3.57×` on the normalized-recovery scale, versus `1.99×` and `2.35×` on the raw-R² scale. The magnitude is therefore scale-dependent. These are point summaries, not an independence-adjusted target-block interaction test. Volatility and timing remain separate controls. These
 ratios alone do not establish an interaction because target families are
 correlated and grouped stock-day uncertainty has not yet been computed.
 
@@ -53,15 +54,34 @@ operational ceiling. The mean normalized directional gap over the frozen low-bud
 
 ### Mediation by progressive whitening
 
-At `k_50gap=128`, whitening reduces the decisive-budget gap by `55.6%` but does not eliminate it. Non-robustness first appears at `k_nonrobust=508`; this is the maximum tested valid whitening depth. This pattern does not support concentration in only a few leading PCs.
+At `k_50gap=128`, whitening reduces the decisive-budget gap by `55.6%` but does not eliminate it. At the historical technical field `k_nonrobust=508`, the gap no longer meets the compound preregistered criterion `lower > 0 and mean ≥ δ=0.10` at both decisive budgets; this is an effect-threshold transition, not a confidence interval crossing zero. The decisive-budget mean gaps are `0.035524`, `0.068723`, and their lower interval bounds remain positive (`0.000085`, `0.036869`). It is the maximum tested valid whitening depth. The mean decisive-budget gap is reduced by `92.6%` there. This pattern does not support concentration in only a few leading PCs.
 
-## Secondary frozen preregistered classification
+## Frozen preregistered classification and δ sensitivity
 
-The frozen Phase-I technical classification is **A1**.
-Technical rule satisfied: Native finite-sample gap is robust at adjacent low budgets and progressive whitening reduces it by at least 50% and makes it non-robust. The result rows,
-thresholds and classification logic have not been modified. The operational
-ceiling result is stated separately as **A1 with a robust
-ceiling gap**; `B` is not a coexisting outcome.
+At the preregistered primary threshold `δ=0.10`, the
+frozen Phase-I technical classifier returns **A1**. This label
+is reported secondarily to the empirical accessibility result. In the
+historical rule, “robust” is a
+compound practical-effect criterion: the interval lower bound must exceed zero
+and the point estimate must reach `δ`. It does not mean only “statistically
+different from zero.”
+
+| δ | technical class | k_50gap | k_nonrobust |
+| --- | --- | --- | --- |
+| 0.05 | D | 128 | — |
+| 0.10 | A1 | 128 | 508 |
+| 0.15 | A1 | 128 | 508 |
+
+The `δ=0.05` and `δ=0.15` rows are mandatory preregistered sensitivities, not
+alternative primary outcomes. A label change across this grid means that the
+taxonomy is threshold-sensitive; it does not alter any measured gap. The
+result rows, thresholds and classification logic have not been modified. The
+operational ceiling result is stated separately as **A1 with
+a robust ceiling gap**; `B` is not a coexisting outcome.
+
+The frozen machine reason is retained verbatim in the record below. Its phrase
+“makes it non-robust” must be read according to the compound criterion above,
+not as a confidence interval crossing zero.
 
 The complete machine-readable record is reproduced for auditability:
 
@@ -345,7 +365,10 @@ two chronological halves of the former held-out stock-days.
 - alpha is selected on the fixed complete validation split;
 - the fixed complete test split is evaluated only after configuration fixing;
 - directional, volatility and timing are summarized separately;
-- normalized recovery is target-wise and only uses full-budget R² at least 0.01.
+- normalized recovery is target-wise and only uses full-budget R² at least 0.01;
+- the `R² ≥ 0.01` ceiling-eligibility rule is evaluated on full-budget test
+  outcomes; it is part of metric definition, not validation-time hyperparameter
+  selection.
 
 The smallest observed fractional-budget `n/D` is `6.951`, so the original grid does not enter the `n/D < 1` regime.
 
@@ -353,8 +376,9 @@ The smallest observed fractional-budget `n/D` is `6.951`, so the original grid d
 
 - The dataset contains seven stocks from one market/domain.
 - The historical split is stock-day-group-disjoint but not globally
-  chronological; the same calendar date may occur on different split sides for
-  different stocks.
+  chronological. Within each stock, train days span almost the full calendar
+  year and occur both before and after held-out validation/test days; this is
+  not a forward-only temporal-generalization design.
 - Validation and test are chronological halves of a historically explored
   held-out set, so the new test is not a pristine external confirmation set.
 - Fractional budgets vary within-day endpoint coverage while retaining seven

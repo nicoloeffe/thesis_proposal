@@ -207,3 +207,15 @@ def test_unequal_width_band_difference_is_never_promoted_to_matched_evidence():
     assert status.startswith("not_dimension_matched")
     assert "16 directions" in status
     assert "32" in status
+
+
+def test_phase2_report_template_does_not_call_exceedance_fraction_a_p_value():
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "experiment01"
+        / "phase2_reporting.py"
+    ).read_text(encoding="utf-8")
+    assert '"empirical p mean"' not in source
+    assert '"p(random > band)"' not in source
+    assert "non sono interpretate come p-value" in source
+    assert "transizione della soglia di effetto" in source

@@ -1,6 +1,6 @@
 # Experiment 01 — report revision changelog
 
-**Revision date:** 2026-08-25  
+**Revision date:** 2026-08-27  
 **Scope:** narrative and read-only diagnostics only
 
 ## Invariants
@@ -42,17 +42,55 @@
   Haar null and descriptive predictive mass per direction.
 - Preserved all Phase-II results, including the original negative conclusion
   about the proposed local non-monotonic explanation.
+- Renamed the stored 0/1 Haar tail quantities as finite-draw exceedance
+  fractions rather than p-values. No null draw or scientific result changed.
+- Corrected the Phase-I bridge wording at `k_nonrobust=508`: both lower bounds
+  remain positive, while the compound `mean >= delta=0.10` effect criterion is
+  no longer met at both decisive budgets; the mean gap reduction is `92.6%`.
+- Added an explicit Phase-II claim map and disclosed that `jepa_masked` is a
+  descriptive control whose frozen epoch-20 checkpoint follows its observed
+  validation minima at epochs 6–8.
 
 ## Phase III-R
 
-- Kept `R3` unchanged but restricted its meaning to the frozen selected MLP
-  family and conditioning transforms.
+- Kept `R3` unchanged as the frozen technical classifier output, while moving
+  the valid full-budget MLP ceiling to the scientific headline.
 - Moved raw R², medians, ranges, negative-score fractions, ceilings and
   eligibility ahead of normalized-gap interpretation.
 - Marked the attenuation values as algebraic technical-rule outputs rather
   than stable effect sizes when low-budget raw R² is negative.
-- Removed any general claim that nonlinear readers preserve the same
-  accessibility mechanism.
+- Marked the low-budget “beyond conditioning” mechanism as not identified:
+  at `b_1_4`, both full-whitened branches have negative raw R² in every cell.
+- Added a Phase-III-R claim map and removed any general claim that nonlinear
+  readers preserve the same accessibility mechanism.
+
+## F16
+
+- Preserved the frozen result tables, thresholds, selections, original
+  post-amendment summary and Phase-I outcome; no training, fit or test access
+  was repeated.
+- Added a complete pre-boundary, post-boundary and deduplicated decision audit.
+  The numerical `rho=0.8` amendment is mathematically valid but was applied
+  6.48 minutes after test unlock and changed three family decisions.
+- Removed `whitening_k128` as an independent family because it empirically
+  duplicates Axis B (maximum raw R² difference `0.000340`, correlation
+  `0.999991`; maximum range over the whitening ladder `0.000920`).
+- Corrected the smooth-volume conclusion: after deduplication only `3/5`
+  distinct families pass, so the original four-family rule is not met.
+- Distinguished Spearman `rho>=0.8` from strict monotonicity. With four
+  budgets the former permits an adjacent inversion; only Axis A is strictly
+  monotone in every seed.
+- Added the minimum-budget saturation diagnostic. At 7,116 labelled rows
+  (`0.108%` of full train), role retention, top-k mass and pooling loss have
+  already completed 82–89% of their mean horizon→supervised path.
+- Retained the robust primary evidence: all 12 grouped intervals exclude zero
+  and all 84 leave-one-stock-out F16-supervised minus horizon gaps are
+  positive.
+- Reclassified directionality-specific co-adaptation as not identified because
+  the volatility ceiling-minus-horizon normalization gaps are all below the
+  post-hoc `0.05` interpretability floor.
+- Added the F16 claim map, family audit, saturation table, corrective JSON and
+  corrective manifest.
 
 ## Research note and project summary
 

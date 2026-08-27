@@ -6,7 +6,11 @@ Phase III is governed by the later definitive specification
 [`SPEC_EXPERIMENT_01_PHASE3_READER_ACCESSIBILITY_20260801.md`](https://github.com/nicoloeffe/thesis_proposal/blob/main/docs/experiment01/SPEC_EXPERIMENT_01_PHASE3_READER_ACCESSIBILITY_20260801.md)
 (SHA-256 `78ca15821ac40355c35e5f40ecaf5086f5e6bbb6f339255a85b13fc7d952a151`).
 It replaces the eligibility rule in the earlier optional MLP section; the
-executed `b_1_4` floor is protocol-eligible.
+executed `b_1_4` floor is protocol-eligible. The earlier 2026-07-30 optional
+MLP section also required at least eight full days per stock and prohibited
+interpretation below that floor. The later amendment removed that condition;
+formal eligibility therefore does not erase the earlier warning about the
+severely overparameterized low-budget regime.
 
 Phase III v1 was terminated before selection freeze and before any production
 test access with status `terminated_pre_test_compute_infeasible` and
@@ -21,16 +25,25 @@ protocol-recorded paired seeds. The capacity sweep and omitted spectral arms
 remain outside Phase III-R.
 
 
-## Preregistered outcome
+## Primary scientific result and identifiability
 
-The directional `last_concat512` primary outcome is **R3: the frozen gap criterion persists for the selected MLP after whitening**. Phase-I technical outcome **A1 remains frozen and unchanged**. Phase III changes only the reader-relative diagnosis, not the Phase-I result. For R3 specifically, “persists” refers only to the frozen selected MLP family and transforms; it is not a claim about nonlinear readers in general.
+The interpretable Phase-III-R result is the full-budget operational ceiling. On directional `last_concat512`, horizon-JEPA reaches 0.3448 in native coordinates and 0.3609 after full whitening: respectively 0.8602 and 0.9119 of the matched supervised MLP. The nonlinear lifts over frozen ridge are 0.1248 and 0.1408. These are operational reader results, not Bayes-content estimates.
+
+The low-budget conditioning claim is **not identified in the executed regime**. At `b_1_4` after full whitening, supervised has mean raw R² -0.4158 with negative-score fraction 1.0000, while horizon-JEPA has mean -2.4157 with negative-score fraction 1.0000. Both readers are worse than the test-mean baseline in every result cell. Their normalized-recovery difference therefore cannot isolate representation accessibility from joint reader optimization and scale failure.
+
+In native coordinates at the same budget, supervised has mean raw R² 0.2552 and horizon-JEPA -0.3866, with negative-score fractions 0.0000 and 0.9660. This is a real result for the exact frozen reader, but it does not establish a general nonlinear-reader mechanism.
+
+## Frozen preregistered technical classification
+
+Applied literally to the normalized recoveries, the frozen classifier returns **R3: the frozen gap criterion persists for the selected MLP after whitening**. This label is retained as a secondary technical audit result; it is not promoted to the scientific conclusion above. Phase-I technical outcome **A1 remains frozen and unchanged**.
 
 The frozen native-ridge low-budget normalized gap is 0.6975. The native-MLP gap is 1.5301, giving reader attenuation -1.1937. The full-whitened MLP gap is 4.9594, giving within-MLP whitening attenuation -2.2412.
 
 The two attenuation quantities above are algebraic outputs of the frozen
-classification rule, not stable effect-size estimates: low-budget raw R² is
-negative in many primary cells. Raw scores and ceiling eligibility therefore
-come before the normalized-gap interpretation.
+classification rule, not stable effect-size estimates: the full-whitened
+primary low-budget fits fail in both branches, and low-budget raw R² is also
+negative in many native horizon-JEPA cells. Raw scores and fit usability
+therefore come before the normalized-gap interpretation.
 
 ## Raw and normalized budget metrics
 
@@ -77,15 +90,15 @@ serialized as `phase3_report_metrics.parquet`.
 - The production bundle, Phase-I subsets, Phase-I transforms, Phase-II caches and canonical checkpoints passed their hash gates.
 - The historical MLP gate reproduced its recorded branches within absolute tolerance 0.015; that historical reader used coordinate-wise standardization and is not the Phase-III primary reader.
 
-## New Phase-III reader result
+## Exact Phase-III reader and observed low-budget contrast
 
-The primary reader is exactly `Linear(d,256)-GELU-Dropout(0.10)-Linear(256,T)`, with no coordinate-wise native input standardization, BatchNorm or LayerNorm. Weight decay was selected from `[0.0, 1e-05, 0.001]` on the fixed validation split. The selection manifest was frozen and hashed before one-shot test inference.
+The primary reader is exactly `Linear(d,256)-GELU-Dropout(0.10)-Linear(256,T)`, with no coordinate-wise native input standardization, BatchNorm or LayerNorm. Weight decay was selected from `[0.0, 1e-05, 0.001]` on the fixed validation split, while learning rate remained fixed. The selection manifest was frozen and hashed before one-shot test inference. Protocol eligibility of `b_1_4` does not by itself guarantee an interpretable raw-score regime.
 
 Encoder-specific native directional gaps are `{"0": 1.2768411854630035, "1": 1.7423459793309604, "2": 1.5712472605087682}`. Encoder-specific full-whitened gaps are `{"0": 4.692356626927102, "1": 5.2814637547446335, "2": 4.9044829429059655}`. Meaningful-ceiling status is `True`.
 
 ## Conditioning and reader decomposition
 
-Phase III separates: (1) the operational full-budget ceiling of each reader, (2) finite-sample recovery relative to its own target-wise ceiling, (3) dependence on the invertible train-only whitening transform, and (4) dependence on enlarging the reader class from frozen ridge to the preregistered MLP. The reader-by-conditioning interaction is descriptive and does not change R3.
+Phase III attempts to separate: (1) the operational full-budget ceiling of each reader, (2) finite-sample recovery relative to its own target-wise ceiling, (3) dependence on the invertible train-only whitening transform, and (4) dependence on enlarging the reader class from frozen ridge to the preregistered MLP. The first quantity is identified. The low-budget reader-by-conditioning decomposition is not, because the full-whitened reader fails for both branches. This post-hoc interpretability diagnosis does not rewrite the frozen R3 classifier output.
 
 ## Target specificity
 
@@ -100,8 +113,10 @@ Directional, volatility and timing results are reported separately. They are nev
 
 These normalized-gap summaries are descriptive. In particular, values above
 one are differences between normalized recoveries and must not be read as
-“times worse.” A target-block interaction requires grouped stock-day
-uncertainty, which is not present in the current aggregate artifacts.
+“times worse.” Negative raw R² in both full-whitened branches makes the
+low-budget control gaps unsuitable for a mechanistic specificity claim. A
+target-block interaction also requires grouped stock-day uncertainty, which is
+not present in the current aggregate artifacts.
 
 ## Spectral diagnostics
 
@@ -143,10 +158,13 @@ reader.
 
 Equal MLP performance would not prove equal information, and a persistent MLP
 gap does not prove information loss or a general nonlinear-accessibility
-mechanism. Full whitening is a post-hoc train-only invertible coordinate
-transform, not a training-time encoder intervention. No claim is made that
-VICReg/SIGReg must reproduce it or that head-band failure proves tail
-causality.
+mechanism. The primary MLP is not input-standardized or scale-invariant and
+uses a fixed learning rate across native and whitened coordinates. Because the
+full-whitened low-budget fits have negative raw R² in both branches, Phase
+III-R cannot identify persistence beyond second-order conditioning. Full
+whitening is a post-hoc train-only invertible coordinate transform, not a
+training-time encoder intervention. No claim is made that VICReg/SIGReg must
+reproduce it or that head-band failure proves tail causality.
 
 The existing intervals resample encoder, subset and reader seeds and therefore
 measure computational robustness, not population generalization. Grouped

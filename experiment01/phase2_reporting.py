@@ -672,8 +672,10 @@ def _render_report(
                 "top-PCA R2": f"{group.top_pca_test_r2_mean.mean():.4f}",
                 "Haar R2 mean": f"{group.random_test_r2_mean.mean():.4f}",
                 "top percentile mean": f"{group.top_pca_percentile.mean():.1f}",
-                "empirical p mean": f"{group.empirical_p_random_exceeds_top.mean():.3f}",
-                "seed range p": (
+                "Haar exceedance fraction mean": (
+                    f"{group.empirical_p_random_exceeds_top.mean():.3f}"
+                ),
+                "seed range": (
                     f"[{group.empirical_p_random_exceeds_top.min():.2f}, "
                     f"{group.empirical_p_random_exceeds_top.max():.2f}]"
                 ),
@@ -724,7 +726,7 @@ def _render_report(
                 "matched Haar R2": (
                     f"{group['matched_random_test_r2_mean'].mean():.4f}"
                 ),
-                "p(random > band)": (
+                "Haar exceedance fraction": (
                     f"{group['empirical_p_random_exceeds_band'].mean():.3f}"
                 ),
             }
@@ -873,7 +875,7 @@ Il gate storico PCA post-P0 passa su {gate['n_cells']} celle con errore assoluto
 ### Diagnosi in breve
 
 - **Specificità direzionale descrittiva.** Su `last_concat512`, horizon-JEPA colloca soltanto {mass_value('jepa_horizon', 'directional', 8):.4f} e {mass_value('jepa_horizon', 'directional', 16):.4f} della massa direzionale cumulativa nelle prime 8 e 16 PC; supervised ne colloca rispettivamente {mass_value('supervised', 'directional', 8):.4f} e {mass_value('supervised', 'directional', 16):.4f}. Per horizon-JEPA a k=8 i controlli sono molto meno estremi: volatilità {mass_value('jepa_horizon', 'volatility', 8):.4f}, timing {mass_value('jepa_horizon', 'timing', 8):.4f}. Il contrasto resta una diagnostica finché manca incertezza raggruppata per stock-day.
-- **Top-PCA underperformance localizzata.** {haar_headline} {horizon_transition_text} {supervised_null_headline}
+- **Top-PCA underperformance localizzata.** {haar_headline} {horizon_transition_text} {supervised_null_headline} Le quantità 0 e 1 sono frazioni di superamento su {int(random_draws[0])} draw, non p-value continui.
 - **Meccanismo coerente con whitening profondo, non prova causale.** Horizon-JEPA raggiunge solo {mass_value('jepa_horizon', 'directional', 128):.4f} della massa direzionale a k=128 e {mass_value('jepa_horizon', 'directional', 256):.4f} a k=256, contro {mass_value('supervised', 'directional', 128):.4f} e {mass_value('supervised', 'directional', 256):.4f} per supervised. Questa dispersione fornisce una spiegazione spettrale coerente del gap finite-sample e della profondità di whitening, ma il ponte resta descrittivo perché il whitening riscala il full rank anziché troncarlo.
 - **La storia locale 17:32→33:64 non è un confronto dimension-matched.** La prima banda contiene 16 direzioni e la seconda 32: la loro differenza grezza non può spiegare la non-monotonia. Il report conserva i valori storici come audit, ma usa soltanto il confronto di ciascuna banda con il proprio null Haar matched e la massa per direzione come descrittivi.
 
@@ -898,9 +900,9 @@ Le curve complete, comprese `meanK_concatS` e `jepa_masked`, sono in `predictive
 
 Per il blocco direzionale primario, il percentile top-PCA e la frazione dei {int(random_draws[0])} null che lo superano sono:
 
-{_markdown_table(null_rows, ['branch', 'k', 'top-PCA R2', 'Haar R2 mean', 'top percentile mean', 'empirical p mean', 'seed range p'])}
+{_markdown_table(null_rows, ['branch', 'k', 'top-PCA R2', 'Haar R2 mean', 'top percentile mean', 'Haar exceedance fraction mean', 'seed range'])}
 
-I risultati sono riportati per ogni encoder seed in `random_null_summary.parquet`; la media tra seed qui sopra è soltanto descrittiva. Bottom-k, min-norm OLS e ridge trace-normalized tarato su validation sono conservati in `phase2_results.parquet`.
+I risultati sono riportati per ogni encoder seed in `random_null_summary.parquet`; la media tra seed qui sopra è soltanto descrittiva. Le frazioni hanno risoluzione `1/{int(random_draws[0])}` e non sono interpretate come p-value di popolazione né usate per una decisione inferenziale preregistrata. Bottom-k, min-norm OLS e ridge trace-normalized tarato su validation sono conservati in `phase2_results.parquet`.
 
 ## Bande spettrali e non-monotonia k=8,16,32,64
 
@@ -911,7 +913,7 @@ seguente riporta invece, separatamente per banda, il null Haar della stessa
 dimensione e la massa predittiva media per direzione. Le medie sono descrittive
 tra encoder seed; i valori per seed restano negli artefatti.
 
-{_markdown_table(matched_band_rows, ['branch', 'band', 'dimension', 'variance fraction', 'predictive mass', 'mass/direction', 'band-only R2', 'matched Haar R2', 'p(random > band)'])}
+{_markdown_table(matched_band_rows, ['branch', 'band', 'dimension', 'variance fraction', 'predictive mass', 'mass/direction', 'band-only R2', 'matched Haar R2', 'Haar exceedance fraction'])}
 
 Per trasparenza, le differenze paired originarie restano riportate sotto come
 **audit legacy non dimension-matched**. La colonna `robust` descrive soltanto se
@@ -930,7 +932,7 @@ matched sono in `spectral_bands.parquet`.
 
 ## Ponte con il whitening Phase I
 
-Il ponte usa senza rifit `k_50gap = {k_50gap}`, `k_nonrobust = {k_nonrobust}` e i gap congelati alle profondità {', '.join(str(int(value)) for value in bridge_depths)}. Il whitening a {k_50gap} dimezza il gap ma non lo elimina; la non-robustezza compare a {k_nonrobust}, la massima profondità valida testata. Phase II non assume né conclude che il problema sia concentrato in poche PC.
+Il ponte usa senza rifit `k_50gap = {k_50gap}`, `k_nonrobust = {k_nonrobust}` e i gap congelati alle profondità {', '.join(str(int(value)) for value in bridge_depths)}. Il whitening a {k_50gap} riduce il gap del 55,6% ma non lo elimina. Al campo tecnico storico `k_nonrobust={k_nonrobust}`, il gap non soddisfa più a entrambi i budget il criterio composto `lower > 0 and mean >= delta=0.10`: i lower bound restano positivi e la riduzione media è del 92,6%. È quindi una transizione della soglia di effetto, non un intervallo che attraversa zero. Phase II non assume né conclude che il problema sia concentrato in poche PC.
 
 {_markdown_table(gap_rows, ['block', 'budget', 'k', 'Phase-I gap'])}
 
@@ -942,7 +944,9 @@ Directional, volatility e timing sono riportati separatamente e con identica pro
 
 Il null Haar usa il min-norm OLS diagnostico per preservare la parità con il vecchio PCA ladder post-P0. Il ridge tarato è prodotto per top-k, bottom-k, band-only e leave-band-out, ma non viene usato per selezionare o classificare estrazioni Haar.
 
-Gli intervalli correnti non includono resampling di stock e stock-day; una diagnostica che non sopravvive a tale incertezza raggruppata dovrà essere declassata. Il dataset copre sette titoli di un singolo mercato, usa lo split storico non globalmente cronologico e il test deriva da un held-out set già esplorato storicamente. Questi limiti impediscono di trattare Phase II come conferma esterna.
+Gli intervalli correnti non includono resampling di stock e stock-day; una diagnostica che non sopravvive a tale incertezza raggruppata dovrà essere declassata. Il dataset copre sette titoli di un singolo mercato. Lo split è disgiunto per stock-day ma non forward-chaining: per ciascun titolo, il calendario train precede e segue i giorni di validation/test. Il test deriva inoltre da un held-out set già esplorato storicamente. Questi limiti impediscono di trattare Phase II come conferma esterna.
+
+`jepa_masked` è mantenuto come controllo interno descrittivo, non come confronto headline: il checkpoint canonico epoch 20 è successivo ai minimi di validation osservati alle epoch 6–8 ed era già stato congelato prima di Phase II.
 
 ## Compute e failure
 

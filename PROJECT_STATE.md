@@ -15,8 +15,8 @@ per soglie, procedure e risultati numerici.
 | Phase II | completa | localizzazione spettrale direzionale profonda |
 | Phase III-R | completa | outcome reader-relative `R3` |
 | T2 token-role matched null | completa | asse Hadamard non eccezionale nel null strutturato |
-| T3/F16 label-matched | completo | 12/12 training, test one-time, summary e report completi; zero failure |
-| suite software | completa | 187 test superati dopo T2 e F16 |
+| T3/F16 label-matched | completo | 12/12 training; audit correttivo read-only: transizione precoce, non legge smooth |
+| suite software | completa | 190 test superati dopo la revisione correttiva F16 |
 
 Non sono previste esecuzioni di Phase II o III aggiuntive. Encoder storici,
 bundle, split, seed, budget, target, soglie e risultati Phase I–III sono
@@ -66,9 +66,12 @@ Vanno mantenuti distinti:
 - gap robusto di recovery normalizzata ai bassi budget;
 - mediazione del gap tramite whitening progressivo.
 
-Il whitening a `k=128` dimezza il gap senza eliminarlo; la non-robustezza si
-raggiunge a `k=508`. La classificazione `A1` è tecnica e secondaria rispetto al
-risultato di specificità: **A1 con robusto gap di ceiling**.
+Il whitening a `k=128` dimezza il gap senza eliminarlo. A `k=508` il gap medio è
+ridotto del `92,6%` e resta positivo, ma non soddisfa più il criterio composto
+`lower > 0` e `mean ≥ δ=0,10` a entrambi i budget decisivi. La classificazione
+tecnica restituisce `A1` al threshold principale `δ=0,10`, con sensitivity
+`D/A1` a `δ=0,05/0,15`: è una label secondaria threshold-sensitive, separata
+dal robusto gap operativo di ceiling.
 
 ## Phase II — localizzazione spettrale
 
@@ -88,8 +91,10 @@ Massa predittiva direzionale cumulativa media su `last_concat512`:
 
 Per horizon-JEPA direzionale, tutti i 100 sottospazi Haar superano le top PC a
 `k=8` e `k=16` in tutti e tre i seed. A `k=128/256` le top PC tornano a
-dominare il null. La spiegazione locale “banda 17:32 povera, 33:64 informativa”
-non è robusta in tutti i rami e rimane post hoc.
+dominare il null. Le quantità 0/1 sono frazioni di superamento su 100 draw,
+non p-value continui. La spiegazione locale “banda 17:32 povera, 33:64
+informativa” non è verificata: il contrasto storico confronta 16 contro 32
+direzioni ed è quindi dimension-confounded.
 
 Compute canonico: 718,5 secondi wall, 4,35 GiB peak RAM, zero failure.
 
@@ -97,8 +102,10 @@ Compute canonico: 718,5 secondi wall, 4,35 GiB peak RAM, zero failure.
 
 Report: [REPORT_EXPERIMENT_01_PHASE3.md](docs/results/phase3r/REPORT_EXPERIMENT_01_PHASE3.md).
 
-Outcome: **R3 — difficoltà persistente oltre linearità e conditioning di
-secondo ordine**.
+Classificazione tecnica congelata: **R3**. La conclusione scientifica
+low-budget è però **non identificata**: a `b_1_4` entrambi i rami
+full-whitened hanno R² negativo in tutte le celle, quindi il gap normalizzato
+non separa accessibilità della rappresentazione da fallimento del reader.
 
 Ceiling MLP full-budget horizon-JEPA:
 
@@ -106,8 +113,9 @@ Ceiling MLP full-budget horizon-JEPA:
 - direzionale full-whitened: `0,3609`, pari a `0,9119` del supervised;
 - volatilità full-whitened: `0,5362`, pari a `0,9938` del supervised.
 
-Il reader non lineare recupera contenuto operativo ma non elimina la difficoltà
-finite-sample relativa.
+Il risultato identificato è il recupero operativo full-budget. Non affermiamo
+che il reader non lineare dimostri una difficoltà persistente oltre il
+conditioning nel regime low-budget eseguito.
 
 ## T2 — diagnostica token-role dimension matched
 
@@ -129,7 +137,7 @@ operativo cross-encoder, ma non supporta un asse Hadamard privilegiato o un
 meccanismo “relational across tokens”. PCA, media temporale e proiezione sui
 ruoli restano operatori distinti. `A1` e `R3` non cambiano.
 
-## T3/F16 — dose response supervised label-matched
+## T3/F16 — diagnostica supervised label-matched
 
 Specifica:
 [SPEC_EXPERIMENT_01_F16_LABEL_MATCHED.md](docs/experiment01/SPEC_EXPERIMENT_01_F16_LABEL_MATCHED.md).
@@ -169,18 +177,23 @@ F16-supervised su horizon-JEPA in tutti i budget e seed. Il gap varia da
 `0,137–0,152` a `b_16`; tutti i 12 intervalli grouped al 95% escludono zero e
 anche i 84 leave-one-stock-out restano positivi.
 
-Due flag preregistrati passano e vanno mantenuti distinti:
+La reaggregazione correttiva distingue il risultato primario dai flag di forma:
 
 - supervised-like a basso volume: passa a `b_1` (28.446 righe); a `b_1_4`
-  Axis A è già oltre il midpoint, ma Axis B non lo è in tutti i seed;
-- dipendenza smooth dal volume: passano 4 famiglie su 6 — Axis A, Axis B,
-  perdita al pooling e whitening-k128.
+  Axis A è già oltre il midpoint, ma Axis B non lo è in tutti i seed. È una
+  regola di soglia, non equivalenza col supervised canonico;
+- dipendenza smooth dal volume: non è supportata dopo aver deduplicato
+  `whitening_k128`, empiricamente equivalente ad Axis B. Passano 3 famiglie
+  distinte su 5, contro le 4 richieste dalla regola originale.
 
-Role retention e top-k predictive mass non sono monotoni in tutti i seed. Non
-passano né il floor di ottimizzazione né la specificità direzionale rispetto a
-entrambi i controlli. Quindi F16 supporta un rapido riassetto dell'accessibilità
-e alcune proprietà geometriche sotto supervisione target-aligned, ma non una
-storia unica in cui tutte le diagnostiche spettrali si muovono insieme.
+Soltanto Axis A è strettamente monotona in tutti i seed. Al budget minimo,
+7.116 righe (`0,108%` del train completo), role retention, top-k mass e perdita
+al pooling hanno già percorso in media l'82–89% del tragitto
+horizon→supervised: la forma osservata è una transizione precoce con
+saturazione. Il floor di ottimizzazione non passa; la specificità direzionale
+è invece **non identificata**, perché i denominatori di controllo per
+volatilità sono quasi nulli. F16 non supporta una storia unica e smooth in cui
+tutte le diagnostiche si muovono insieme.
 L'outcome Phase-I `A1 con robusto gap di ceiling` resta invariato.
 
 Due amendment post-test sono registrati senza riaprire il test: conversione
@@ -188,6 +201,9 @@ strettamente seriale `NaN→null` e correzione della frontiera numerica per tre
 Spearman matematicamente pari a `0,8` ma rappresentati come
 `0,7999999999999999`. R², checkpoint, alpha, soglie e risultati non sono stati
 modificati.
+
+Mappa dei claim e audit pre/post amendment:
+[F16_CLAIM_MAP.md](docs/review/F16_CLAIM_MAP.md).
 
 ## Asset canonici
 

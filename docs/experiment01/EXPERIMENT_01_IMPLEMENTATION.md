@@ -37,8 +37,9 @@ section, so the executed Phase-III `b_1_4` floor is protocol-eligible.
   best/epoch-20 checkpoints and 33/33 validation sufficient-statistic caches;
 - F16 fixed test, grouped uncertainty, summary and report: complete; no
   selection changed after the one-time unlock;
-- active software verification: 187 tests passed after F16 additions (one
-  harmless empty-legend warning in a synthetic Phase-I plotting smoke test).
+- active software verification: 190 tests passed after the corrective F16
+  reporting revision (one harmless empty-legend warning in a synthetic
+  Phase-I plotting smoke test).
 
 The authoritative current overview is
 [`PROJECT_STATE.md`](../../PROJECT_STATE.md). This implementation contract

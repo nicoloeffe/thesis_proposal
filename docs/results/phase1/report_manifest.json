@@ -1,13 +1,111 @@
 {
   "changelog": "CHANGELOG_NARRATIVE_20260731.md",
   "claim_table": {
-    "n_rows": 13,
+    "n_rows": 17,
     "path": "17_claim_table.parquet"
   },
   "critical_budget_metrics": {
     "n_rows": 12,
     "path": "16_critical_budget_metrics.parquet"
   },
+  "delta_sensitivity": [
+    {
+      "decisive_budgets": [
+        0.125,
+        0.25
+      ],
+      "delta": 0.05,
+      "k_50gap": 128,
+      "k_nonrobust": null,
+      "native_adjacent_robust_pairs": [
+        [
+          0.125,
+          0.25
+        ],
+        [
+          0.25,
+          0.5
+        ],
+        [
+          0.5,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          4
+        ]
+      ],
+      "outcome": "D"
+    },
+    {
+      "decisive_budgets": [
+        0.125,
+        0.25
+      ],
+      "delta": 0.1,
+      "k_50gap": 128,
+      "k_nonrobust": 508,
+      "native_adjacent_robust_pairs": [
+        [
+          0.125,
+          0.25
+        ],
+        [
+          0.25,
+          0.5
+        ],
+        [
+          0.5,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          4
+        ]
+      ],
+      "outcome": "A1"
+    },
+    {
+      "decisive_budgets": [
+        0.125,
+        0.25
+      ],
+      "delta": 0.15,
+      "k_50gap": 128,
+      "k_nonrobust": 508,
+      "native_adjacent_robust_pairs": [
+        [
+          0.125,
+          0.25
+        ],
+        [
+          0.25,
+          0.5
+        ],
+        [
+          0.5,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          4
+        ]
+      ],
+      "outcome": "A1"
+    }
+  ],
   "figure_06_audit": {
     "alpha_values": [
       0.0,
@@ -133,7 +231,7 @@
     }
   },
   "narrative_revision": {
-    "date": "2026-08-25",
+    "date": "2026-08-27",
     "results_or_technical_summary_modified": false,
     "superseded_report_identity": "version_control_history"
   },
@@ -366,6 +464,104 @@
   "phase2_status": "complete",
   "phase3_r_status": "complete",
   "primary_result": {
+    "delta_sensitivity": [
+      {
+        "decisive_budgets": [
+          0.125,
+          0.25
+        ],
+        "delta": 0.05,
+        "k_50gap": 128,
+        "k_nonrobust": null,
+        "native_adjacent_robust_pairs": [
+          [
+            0.125,
+            0.25
+          ],
+          [
+            0.25,
+            0.5
+          ],
+          [
+            0.5,
+            1
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            2,
+            4
+          ]
+        ],
+        "outcome": "D"
+      },
+      {
+        "decisive_budgets": [
+          0.125,
+          0.25
+        ],
+        "delta": 0.1,
+        "k_50gap": 128,
+        "k_nonrobust": 508,
+        "native_adjacent_robust_pairs": [
+          [
+            0.125,
+            0.25
+          ],
+          [
+            0.25,
+            0.5
+          ],
+          [
+            0.5,
+            1
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            2,
+            4
+          ]
+        ],
+        "outcome": "A1"
+      },
+      {
+        "decisive_budgets": [
+          0.125,
+          0.25
+        ],
+        "delta": 0.15,
+        "k_50gap": 128,
+        "k_nonrobust": 508,
+        "native_adjacent_robust_pairs": [
+          [
+            0.125,
+            0.25
+          ],
+          [
+            0.25,
+            0.5
+          ],
+          [
+            0.5,
+            1
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            2,
+            4
+          ]
+        ],
+        "outcome": "A1"
+      }
+    ],
     "name": "frozen_phase1_outcome_with_separate_scientific_diagnostics",
     "phase1_normalized_finite_sample_gap": {
       "directional": 0.5460198970445955,
@@ -373,6 +569,17 @@
       "directional_over_volatility": 2.970617818058522,
       "timing": 0.15275756594437107,
       "volatility": 0.18380684776254808
+    },
+    "phase1_raw_decisive_budget_gap": {
+      "available": true,
+      "definition": "mean across decisive budgets of supervised minus horizon-JEPA raw test R2",
+      "directional_over_timing": 2.3463605560715823,
+      "directional_over_volatility": 1.9873342984295654,
+      "raw_gap_by_target_block": {
+        "directional": 0.3052834455898451,
+        "timing": 0.13010934947737485,
+        "volatility": 0.15361454075999528
+      }
     },
     "pooling_diagnostic": {
       "available": true,
@@ -423,6 +630,18 @@
     }
   },
   "protected_inputs": {
+    "gap_summary_delta_0.05": {
+      "path": "validation/experiment01/execution_20260730/summary/gap_summary_delta_005.parquet",
+      "sha256": "88ecc952997fb65613b3c2d3418570c9ddbcd27258900f340f55ef55176b6ec8"
+    },
+    "gap_summary_delta_0.10": {
+      "path": "validation/experiment01/execution_20260730/summary/gap_summary_delta_010.parquet",
+      "sha256": "b59375ab10ad8631a3d8296c958d2f1b42bfc069ecd17abf3fa2d90ee1a616be"
+    },
+    "gap_summary_delta_0.15": {
+      "path": "validation/experiment01/execution_20260730/summary/gap_summary_delta_015.parquet",
+      "sha256": "22624bb1f7fd43f9e5b030e189e3501fe6c86dd0b59a4c769bdb40eac94101cd"
+    },
     "phase1_results": {
       "path": "validation/experiment01/execution_20260730/phase1/results.parquet",
       "sha256": "ecf4e410c595baa32d06a1998bbd5151794d02ff141499af3c1f56268e110ffb"
@@ -438,6 +657,17 @@
     "technical_summary": {
       "path": "validation/experiment01/execution_20260730/summary/summary.json",
       "sha256": "7978961be69e50881ac022a67bfd7fea4f619c9806374121b57d6d4cbac1d4a6"
+    }
+  },
+  "raw_specificity": {
+    "available": true,
+    "definition": "mean across decisive budgets of supervised minus horizon-JEPA raw test R2",
+    "directional_over_timing": 2.3463605560715823,
+    "directional_over_volatility": 1.9873342984295654,
+    "raw_gap_by_target_block": {
+      "directional": 0.3052834455898451,
+      "timing": 0.13010934947737485,
+      "volatility": 0.15361454075999528
     }
   },
   "regularization_audit": {

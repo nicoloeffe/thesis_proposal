@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 import numpy as np
 
@@ -28,6 +30,7 @@ from experiment01.f16_test import (
 )
 from experiment01.f16_posttest import strict_json_safe_fingerprint
 from experiment01.f16_posttest_threshold import BOUNDARY_TOLERANCE, SPEARMAN_THRESHOLD
+from experiment01.f16_reporting import build_f16_corrective_diagnostics
 from experiment01.io import canonical_json_sha256
 from experiment01.linear import SufficientStats, sufficient_stats
 
@@ -237,3 +240,33 @@ def test_f16_spearman_boundary_treats_binary_float_0_8_as_at_least_0_8() -> None
     observed = 0.7999999999999999
     assert observed < SPEARMAN_THRESHOLD
     assert observed >= SPEARMAN_THRESHOLD - BOUNDARY_TOLERANCE
+
+
+def test_f16_corrective_reanalysis_deduplicates_axis_b_whitening_family() -> None:
+    root = Path(__file__).resolve().parents[1]
+    output = root / "validation/experiment01/f16_20260826"
+    correction, family_audit, saturation = build_f16_corrective_diagnostics(
+        root, output
+    )
+    assert correction["amendment_audit"]["pre_boundary_family_pass_count"] == 1
+    assert correction["amendment_audit"]["post_boundary_family_pass_count"] == 4
+    assert correction["deduplicated_family_pass_count"] == 3
+    assert correction["deduplicated_flags"]["smooth_label_volume_dependence"] is False
+    assert correction["deduplicated_flags"][
+        "accessibility_without_measured_geometry_change"
+    ] is True
+    assert correction["duplicate_audit"][
+        "maximum_absolute_raw_r2_difference"
+    ] < 4e-4
+    assert correction["directionality_audit"]["scientific_status"] == "not_identified"
+    assert correction["primary_paired_gap_audit"] == {
+        "grouped_cell_count": 12,
+        "grouped_positive_gap_count": 12,
+        "grouped_intervals_excluding_zero_count": 12,
+        "leave_one_stock_out_count": 84,
+        "leave_one_stock_out_positive_gap_count": 84,
+    }
+    assert family_audit.loc[
+        family_audit["strict_monotone_all_seeds"], "family"
+    ].tolist() == ["axis_a_accessibility"]
+    assert saturation["label_rows"].eq(7116).all()

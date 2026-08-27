@@ -15,7 +15,9 @@ hashed inputs and are tracked separately from the original execution manifests.
 - [`token_role/REPORT_EXPERIMENT_01_TOKEN_ROLE.md`](token_role/REPORT_EXPERIMENT_01_TOKEN_ROLE.md):
   dimension-matched structured role-Haar corrective diagnostic;
 - [`f16/REPORT_EXPERIMENT_01_F16.md`](f16/REPORT_EXPERIMENT_01_F16.md):
-  completed label-matched supervised dose-response diagnostic;
+  completed label-matched supervision diagnostic and corrective read-only
+  reaggregation; `f16_corrective_reanalysis.json`, family audit, saturation
+  table and corrective manifest make the amendment and deduplication explicit;
 - [`REPORT_REVISION_PROVENANCE_20260825.json`](REPORT_REVISION_PROVENANCE_20260825.json):
   frozen scientific identities and hashes of the corrected narrative layer.
 - [`CHANGELOG_REPORT_REVISION_20260825.md`](CHANGELOG_REPORT_REVISION_20260825.md):

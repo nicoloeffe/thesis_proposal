@@ -32,6 +32,21 @@ FROZEN_SCIENTIFIC_HASHES = {
     "validation/experiment01/execution_20260730/phase3_reduced/summary.json": (
         "e5e707a40c040cd5062439670a1aa33a0b7ea21dd5b23c59557f2e9299d6c4d6"
     ),
+    "validation/experiment01/f16_20260826/f16_results.parquet": (
+        "2b2201930da7908d8889040ca5a034fb640b17a42167c33de2d566a3ad661c84"
+    ),
+    "validation/experiment01/f16_20260826/f16_geometry.parquet": (
+        "edff15f5581c5983c64460970561006ec353d0842b9deee839c290282cb0e2cb"
+    ),
+    "validation/experiment01/f16_20260826/f16_grouped_uncertainty.parquet": (
+        "765fa96254309e8afd349bd921a288eb30f3d9348fb0eaff268546f392799279"
+    ),
+    "validation/experiment01/f16_20260826/f16_summary.json": (
+        "ef69b6e62020b425426fd6b58e91e743446847df15dba5a1bef498991848efc1"
+    ),
+    "validation/experiment01/f16_20260826/f16_final_manifest.json": (
+        "799dde94a32e3405af2c0ab7e5fd9cc50f11563eed48f44593037c011f9bcbc0"
+    ),
 }
 
 HISTORICAL_PHASE2_MANIFEST_SHA256 = (
@@ -90,21 +105,47 @@ REPORT_PAIRS = {
         "validation/experiment01/execution_20260730/phase3_reduced/"
         "phase3_report_metrics.parquet"
     ),
+    "docs/results/f16/REPORT_EXPERIMENT_01_F16.md": (
+        "validation/experiment01/f16_20260826/REPORT_EXPERIMENT_01_F16.md"
+    ),
+    "docs/results/f16/f16_corrective_reanalysis.json": (
+        "validation/experiment01/f16_20260826/f16_corrective_reanalysis.json"
+    ),
+    "docs/results/f16/f16_family_audit.parquet": (
+        "validation/experiment01/f16_20260826/f16_family_audit.parquet"
+    ),
+    "docs/results/f16/f16_saturation_table.parquet": (
+        "validation/experiment01/f16_20260826/f16_saturation_table.parquet"
+    ),
+    "docs/results/f16/f16_corrective_manifest.json": (
+        "validation/experiment01/f16_20260826/f16_corrective_manifest.json"
+    ),
 }
 
 REVISED_REPOSITORY_FILES = (
     "README.md",
+    "PROJECT_STATE.md",
+    "docs/research/COSA_ABBIAMO_FATTO_E_COSA_NO.md",
     "docs/research/RESEARCH_NOTE_GEOMETRY_ACCESSIBILITY.md",
+    "docs/review/PHASE1_CLAIM_MAP.md",
+    "docs/review/PHASE2_CLAIM_MAP.md",
+    "docs/review/PHASE3R_CLAIM_MAP.md",
+    "docs/review/F16_CLAIM_MAP.md",
+    "docs/review/SUPERVISOR_READING_GUIDE.md",
     "docs/results/README.md",
     "docs/results/CHANGELOG_REPORT_REVISION_20260825.md",
     "docs/results/token_role/REPORT_EXPERIMENT_01_TOKEN_ROLE.md",
     "docs/experiment01/SPEC_EXPERIMENT_01_TOKEN_ROLE_MATCHED_NULL_20260826.md",
-    "PROJECT_STATE.md",
     "experiment01/io.py",
     "experiment01/reporting.py",
     "experiment01/phase2_reporting.py",
     "experiment01/phase3_reporting.py",
+    "experiment01/f16_reporting.py",
     "scripts/experiment01/write_report_revision_provenance.py",
+    "tests/test_experiment01.py",
+    "tests/test_experiment01_phase2.py",
+    "tests/test_experiment01_phase3_reporting.py",
+    "tests/test_experiment01_f16.py",
 )
 
 
@@ -198,7 +239,7 @@ def build_provenance(repository_root: str | Path) -> dict[str, object]:
     return {
         "schema_name": "thesis.experiment01.report_revision_provenance",
         "schema_version": 1,
-        "revision_date": "2026-08-25",
+        "revision_date": "2026-08-27",
         "scope": "narrative_and_read_only_report_diagnostics_only",
         "scientific_results_modified": False,
         "thresholds_modified": False,
@@ -241,21 +282,45 @@ def build_provenance(repository_root: str | Path) -> dict[str, object]:
                 "status": "complete",
                 "phase1_outcome_modified": False,
                 "phase3_outcome_modified": False,
-            }
+            },
+            "f16": {
+                "path": (
+                    "validation/experiment01/f16_20260826/"
+                    "f16_corrective_manifest.json"
+                ),
+                "sha256": sha256_file(
+                    root
+                    / "validation/experiment01/f16_20260826/"
+                    "f16_corrective_manifest.json"
+                ),
+                "status": "complete_read_only_reaggregation",
+                "frozen_f16_results_modified": False,
+                "phase1_outcome_modified": False,
+            },
         },
         "report_revision_artifacts": report_records,
         "revised_repository_files": repository_records,
         "interpretation": {
-            "phase1": "frozen A1; revised narrative and read-only diagnostics",
+            "phase1": (
+                "frozen primary A1 at delta=0.10; mandatory delta sensitivity, "
+                "compound effect-threshold semantics and raw/normalized "
+                "specificity disclosed"
+            ),
             "phase2": "frozen spectral results; revised report only",
             "phase3_r": (
-                "frozen R3 technical classification; revised reader-specific "
-                "interpretation and raw-metric disclosure"
+                "frozen R3 technical classification retained as secondary; "
+                "full-budget MLP ceiling identified, low-budget conditioning "
+                "mechanism not identified because both whitened arms fail"
             ),
             "token_role": (
                 "historical fixed-projection observation retained; completed "
                 "structured role-Haar null does not support a privileged "
                 "role-contrast mechanism"
+            ),
+            "f16": (
+                "positive label-matched gaps retained; response described as "
+                "an early transition and saturation, while the smooth-volume "
+                "flag fails after deduplicating whitening-k128 from Axis B"
             ),
         },
     }

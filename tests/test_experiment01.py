@@ -1132,15 +1132,19 @@ def test_phase1_streaming_smoke_writes_finalized_artifacts(tmp_path):
     initial_text = report_path.read_text()
     assert "Phase II status: `not_present`" in initial_text
     assert "Phase II (PCA/random subspaces) and Phase III (MLP) were not run" not in initial_text
-    assert initial_text.index("## Primary scientific result") < initial_text.index(
-        "## Secondary frozen preregistered classification"
+    assert initial_text.index("## Primary Phase-I result") < initial_text.index(
+        "## Frozen preregistered classification and δ sensitivity"
     )
+    assert "compound practical-effect criterion" in initial_text
+    assert "reported secondarily to the empirical accessibility result" in initial_text
+    assert "alternative primary outcomes" in initial_text
     narrative_text = (
         out / "report" / "SUMMARY_NARRATIVE_EXPERIMENT_01.md"
     ).read_text()
-    assert narrative_text.index("## Primary scientific result") < narrative_text.index(
-        "## Secondary frozen technical classification"
+    assert narrative_text.index("## Primary Phase-I result") < narrative_text.index(
+        "## Frozen technical classification and mandatory sensitivity"
     )
+    assert "technical label\nis secondary to the empirical accessibility result" in narrative_text
     claim_table = pd.read_parquet(out / "report" / "17_claim_table.parquet")
     assert not claim_table["source_artifact"].str.startswith("/").any()
     report_manifest = json.loads(

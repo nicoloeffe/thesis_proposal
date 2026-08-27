@@ -1,0 +1,127 @@
+{
+  "amendment_audit": {
+    "applied_after_test_unlock": true,
+    "changed_families": [
+      {
+        "corrected": true,
+        "family": "axis_b_accessibility",
+        "prior": false,
+        "spearman_by_seed": {
+          "0": 0.7999999999999999,
+          "1": 1.0,
+          "2": 0.7999999999999999
+        }
+      },
+      {
+        "corrected": true,
+        "family": "pooling_loss",
+        "prior": false,
+        "spearman_by_seed": {
+          "0": 1.0,
+          "1": 1.0,
+          "2": 0.7999999999999999
+        }
+      },
+      {
+        "corrected": true,
+        "family": "whitening_k128",
+        "prior": false,
+        "spearman_by_seed": {
+          "0": 0.7999999999999999,
+          "1": 1.0,
+          "2": 0.7999999999999999
+        }
+      }
+    ],
+    "mathematical_correction_valid": true,
+    "minutes_after_unlock": 6.4757956666666665,
+    "post_boundary_family_pass_count": 4,
+    "pre_boundary_family_pass_count": 1,
+    "selection_changed": false,
+    "test_reopened": false
+  },
+  "deduplicated_family_inventory": [
+    "axis_a_accessibility",
+    "axis_b_accessibility",
+    "role_retention",
+    "topk_predictive_mass",
+    "pooling_loss"
+  ],
+  "deduplicated_family_pass_count": 3,
+  "deduplicated_flags": {
+    "accessibility_without_measured_geometry_change": true,
+    "directionality_specific_coadaptation": false,
+    "low_budget_optimization_floor": false,
+    "smooth_label_volume_dependence": false,
+    "supervised_like_at_low_label_volume": true
+  },
+  "deduplicated_overall": "multiple_preregistered_patterns_passed_report_separately",
+  "directionality_audit": {
+    "all_volatility_denominators_below_floor": true,
+    "historical_technical_flag": false,
+    "post_hoc_denominator_floor": 0.05,
+    "reason": "volatility ceiling-minus-horizon anchors are near zero, so the ceiling-scaled control response is unstable",
+    "scientific_status": "not_identified",
+    "volatility_anchor_gap_by_seed": [
+      0.016336121049375762,
+      0.02063369175222496,
+      0.01250643712253785
+    ]
+  },
+  "duplicate_audit": {
+    "excluded_family": "whitening_k128",
+    "maximum_absolute_oriented_coordinate_difference": 0.0022032342695816887,
+    "maximum_absolute_raw_r2_difference": 0.00034003266348286987,
+    "maximum_whitening_ladder_r2_range": 0.0009198076278000289,
+    "pearson_r_raw_values": 0.9999908570850257,
+    "retained_family": "axis_b_accessibility",
+    "same_spearman_pass_pattern": true
+  },
+  "historical_post_boundary_flags": {
+    "accessibility_without_measured_geometry_change": false,
+    "directionality_specific_coadaptation": false,
+    "low_budget_optimization_floor": false,
+    "smooth_label_volume_dependence": true,
+    "supervised_like_at_low_label_volume": true
+  },
+  "historical_pre_boundary_flags": {
+    "accessibility_without_measured_geometry_change": true,
+    "directionality_specific_coadaptation": false,
+    "low_budget_optimization_floor": false,
+    "smooth_label_volume_dependence": false,
+    "supervised_like_at_low_label_volume": true
+  },
+  "payload_fingerprint": "a8ffd78b0e8cb5f51a49ff86e290e0934cbc3e44fb817a8899cdabc41f4d380c",
+  "phase1_outcome_modified": false,
+  "post_boundary_overall": "multiple_preregistered_patterns_passed_report_separately",
+  "pre_boundary_overall": "multiple_preregistered_patterns_passed_report_separately",
+  "primary_paired_gap_audit": {
+    "grouped_cell_count": 12,
+    "grouped_intervals_excluding_zero_count": 12,
+    "grouped_positive_gap_count": 12,
+    "leave_one_stock_out_count": 84,
+    "leave_one_stock_out_positive_gap_count": 84
+  },
+  "revision_date": "2026-08-27",
+  "schema_name": "thesis.experiment01.f16_corrective_reanalysis",
+  "schema_version": 1,
+  "scientific_interpretation": {
+    "accessibility_without_geometry": "technical_flag_true_after_deduplication_but_refers_to_smoothness; large_minimum-budget_geometry shifts are observed",
+    "directionality_specific_coadaptation": "not_identified",
+    "label_matched_gap": "supported",
+    "response_shape": "rapid_transition_at_minimum_budget_then_plateau",
+    "smooth_dose_response": "not_supported_after_family_deduplication",
+    "supervised_like_rule": "passes_at_b_1_as_a_threshold_rule_not_equivalence"
+  },
+  "scientific_result_tables_modified": false,
+  "scope": "post_hoc_read_only_reaggregation",
+  "smooth_rule_required_count": 4,
+  "source_hashes": {
+    "f16_geometry.parquet": "edff15f5581c5983c64460970561006ec353d0842b9deee839c290282cb0e2cb",
+    "f16_grouped_uncertainty.parquet": "765fa96254309e8afd349bd921a288eb30f3d9348fb0eaff268546f392799279",
+    "f16_posttest_threshold_amendment.json": "8a4f702d685d04f9d44e7650774404cb1b4e7372bf082f1399aec42db4619ea8",
+    "f16_results.parquet": "2b2201930da7908d8889040ca5a034fb640b17a42167c33de2d566a3ad661c84",
+    "f16_summary.json": "ef69b6e62020b425426fd6b58e91e743446847df15dba5a1bef498991848efc1"
+  },
+  "status": "complete"
+}

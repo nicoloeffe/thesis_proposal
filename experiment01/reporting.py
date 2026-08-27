@@ -19,7 +19,11 @@ from .io import (
     atomic_write_text,
     sha256_file,
 )
-from .results import hierarchical_interval, paired_gap_points
+from .results import (
+    adjacent_robust_low_budgets,
+    hierarchical_interval,
+    paired_gap_points,
+)
 
 
 COLORS = {
@@ -407,6 +411,215 @@ def _critical_budget_metrics(
     return pd.DataFrame(rows).sort_values(keys).reset_index(drop=True)
 
 
+def _raw_specificity_from_critical_budgets(
+    critical_metrics: pd.DataFrame,
+) -> Mapping[str, object]:
+    """Derive raw-scale arm gaps from the already frozen decisive cells."""
+    required = {
+        "target_block",
+        "budget_days_per_stock",
+        "branch",
+        "raw_test_r2_mean",
+    }
+    if critical_metrics.empty or not required.issubset(critical_metrics.columns):
+        return {"available": False, "reason": "critical-budget cells unavailable"}
+    pivot = critical_metrics.pivot_table(
+        index=["target_block", "budget_days_per_stock"],
+        columns="branch",
+        values="raw_test_r2_mean",
+        aggfunc="first",
+    )
+    if not {"jepa_horizon", "supervised"}.issubset(pivot.columns):
+        return {"available": False, "reason": "paired arm cells unavailable"}
+    pivot = pivot.dropna(subset=["jepa_horizon", "supervised"]).copy()
+    pivot["raw_gap"] = pivot["supervised"] - pivot["jepa_horizon"]
+    gaps = {
+        str(block): float(group["raw_gap"].mean())
+        for block, group in pivot.reset_index().groupby(
+            "target_block", observed=True
+        )
+    }
+    directional = _float_or_nan(gaps.get("directional"))
+    ratios: dict[str, float] = {}
+    for control in ("volatility", "timing"):
+        value = _float_or_nan(gaps.get(control))
+        ratios[f"directional_over_{control}"] = (
+            directional / value
+            if np.isfinite(directional) and np.isfinite(value) and value != 0.0
+            else float("nan")
+        )
+    return {
+        "available": bool(gaps),
+        "definition": (
+            "mean across decisive budgets of supervised minus horizon-JEPA "
+            "raw test R2"
+        ),
+        "raw_gap_by_target_block": gaps,
+        **ratios,
+    }
+
+
+def _gap_summary_subset(
+    frame: pd.DataFrame,
+    *,
+    reader_family: str,
+    feature_view: str,
+) -> pd.DataFrame:
+    return frame[
+        frame["readout"].eq("last_concat512")
+        & frame["target_block"].eq("directional")
+        & frame["reader_family"].eq(reader_family)
+        & frame["feature_view"].eq(feature_view)
+    ].copy()
+
+
+def _all_encoder_directional_gaps_positive(
+    recovery: pd.DataFrame, budgets: Iterable[float]
+) -> bool:
+    selected = recovery[
+        recovery["readout"].eq("last_concat512")
+        & recovery["target_block"].eq("directional")
+        & recovery["reader_family"].eq("ridge_raw_tuned_alpha")
+        & recovery["feature_view"].eq("full_rank_raw")
+    ]
+    paired = paired_gap_points(selected)
+    paired = paired[
+        paired["budget_days_per_stock"].astype(float).isin(
+            [float(value) for value in budgets]
+        )
+    ]
+    if paired.empty:
+        return False
+    means = paired.groupby("encoder_seed", observed=True)[
+        "normalized_gap"
+    ].mean()
+    return len(means) >= 2 and bool((means > 0.0).all())
+
+
+def _classify_frozen_gap_sensitivity(
+    gap_summary: pd.DataFrame,
+    recovery: pd.DataFrame,
+    *,
+    expected_delta: float | None = None,
+    large_sample_ceiling_meaningful: bool,
+    ceiling_gap_robust: bool,
+) -> Mapping[str, object]:
+    """Reapply the frozen taxonomy to serialized gap-summary artifacts.
+
+    This performs no bootstrap and no model fit.  It exists so the mandatory
+    delta sensitivity is reported from the already serialized summaries rather
+    than silently recomputed during report generation.
+    """
+    finite_delta = gap_summary["delta"].dropna().astype(float).unique()
+    if len(finite_delta) == 0 and expected_delta is not None:
+        delta = float(expected_delta)
+    elif len(finite_delta) == 1:
+        delta = float(finite_delta[0])
+        if expected_delta is not None and not np.isclose(delta, expected_delta):
+            raise ValueError("gap sensitivity artifact delta does not match its path")
+    else:
+        raise ValueError("gap sensitivity artifact must contain exactly one delta")
+    native = _gap_summary_subset(
+        gap_summary,
+        reader_family="ridge_raw_tuned_alpha",
+        feature_view="full_rank_raw",
+    )
+    adjacent = adjacent_robust_low_budgets(native)
+    details: dict[str, object] = {
+        "delta": delta,
+        "native_adjacent_robust_pairs": [list(pair) for pair in adjacent],
+        "k_50gap": None,
+        "k_nonrobust": None,
+    }
+    if adjacent and large_sample_ceiling_meaningful:
+        decisive = tuple(float(value) for value in adjacent[0])
+        native_decisive = native[
+            native["budget_days_per_stock"].astype(float).isin(decisive)
+        ]
+        baseline = float(native_decisive["mean"].mean())
+        whiten = _gap_summary_subset(
+            gap_summary,
+            reader_family="ridge_whiten_topk_tuned_alpha",
+            feature_view="full_rank_whiten_topk",
+        )
+        candidates: list[dict[str, object]] = []
+        for requested_k, group in whiten.groupby(
+            "whiten_k_requested", dropna=True, observed=True
+        ):
+            same = group[
+                group["budget_days_per_stock"].astype(float).isin(decisive)
+            ]
+            if len(same) != len(decisive):
+                continue
+            mean_gap = float(same["mean"].mean())
+            robust = same["robust"].astype(bool)
+            candidates.append(
+                {
+                    "k": int(requested_k),
+                    "mean_gap": mean_gap,
+                    "reduction_fraction": (
+                        float("nan")
+                        if baseline == 0.0
+                        else 1.0 - mean_gap / baseline
+                    ),
+                    "all_nonrobust": bool((~robust).all()),
+                    "all_robust": bool(robust.all()),
+                }
+            )
+        candidates.sort(key=lambda row: int(row["k"]))
+        k_50gap = next(
+            (
+                int(row["k"])
+                for row in candidates
+                if float(row["reduction_fraction"]) >= 0.5
+            ),
+            None,
+        )
+        k_nonrobust = next(
+            (
+                int(row["k"])
+                for row in candidates
+                if bool(row["all_nonrobust"])
+            ),
+            None,
+        )
+        details.update(
+            {
+                "decisive_budgets": list(decisive),
+                "k_50gap": k_50gap,
+                "k_nonrobust": k_nonrobust,
+            }
+        )
+        positive_by_encoder = _all_encoder_directional_gaps_positive(
+            recovery, decisive
+        )
+        if k_50gap is not None and k_nonrobust is not None and positive_by_encoder:
+            return {"outcome": "A1", **details}
+
+        maximum = candidates[-1] if candidates else None
+        ols = _gap_summary_subset(
+            gap_summary,
+            reader_family="min_norm_ols_raw",
+            feature_view="full_rank_raw",
+        )
+        ols_decisive = ols[
+            ols["budget_days_per_stock"].astype(float).isin(decisive)
+        ]
+        persistent_ols = len(ols_decisive) == len(decisive) and bool(
+            ols_decisive["robust"].astype(bool).all()
+        )
+        if (
+            maximum is not None
+            and bool(maximum["all_robust"])
+            and persistent_ols
+            and positive_by_encoder
+        ):
+            return {"outcome": "A2", **details}
+    if not adjacent and ceiling_gap_robust:
+        return {"outcome": "B", **details}
+    return {"outcome": "D", **details}
+
+
 def _directional_nonmonotonicity_text(differences: pd.DataFrame) -> str:
     if differences.empty or "target_block" not in differences:
         return "No complete directional adjacent-depth diagnostic is available."
@@ -724,7 +937,15 @@ def generate_phase1_report(
     raw = pd.read_parquet(summary_root / "raw_block_points.parquet")
     recovery_u = pd.read_parquet(summary_root / "recovery_uncertainty.parquet")
     raw_u = pd.read_parquet(summary_root / "raw_uncertainty.parquet")
-    gap = pd.read_parquet(summary_root / "gap_summary_delta_010.parquet")
+    gap_paths = {
+        0.05: summary_root / "gap_summary_delta_005.parquet",
+        0.10: summary_root / "gap_summary_delta_010.parquet",
+        0.15: summary_root / "gap_summary_delta_015.parquet",
+    }
+    gap_sensitivity_frames = {
+        delta: pd.read_parquet(path) for delta, path in gap_paths.items()
+    }
+    gap = gap_sensitivity_frames[0.10]
     result_columns = [
         "branch",
         "encoder_seed",
@@ -1432,8 +1653,32 @@ def generate_phase1_report(
         raise ValueError(
             "ceiling robust flag is inconsistent with its reported interval"
         )
-    outcome_reason = str(outcome["reason"])
-    narrative_outcome_reason = outcome_reason[:1].upper() + outcome_reason[1:]
+    sensitivity_outcomes = [
+        _classify_frozen_gap_sensitivity(
+            gap_sensitivity_frames[delta],
+            recovery,
+            expected_delta=delta,
+            large_sample_ceiling_meaningful=bool(
+                outcome.get("large_sample_ceiling_meaningful")
+            ),
+            ceiling_gap_robust=ceiling_robust,
+        )
+        for delta in sorted(gap_sensitivity_frames)
+    ]
+    primary_sensitivity = next(
+        row for row in sensitivity_outcomes if np.isclose(row["delta"], 0.10)
+    )
+    if (
+        not gap_sensitivity_frames[0.10].empty
+        and primary_sensitivity["outcome"] != outcome["outcome"]
+    ):
+        raise ValueError(
+            "serialized delta=0.10 gap summary does not reproduce the frozen outcome"
+        )
+    raw_specificity = _raw_specificity_from_critical_budgets(critical_metrics)
+    raw_gaps = raw_specificity.get("raw_gap_by_target_block", {})
+    if not isinstance(raw_gaps, Mapping):
+        raw_gaps = {}
     k_50gap = outcome.get("k_50gap")
     k_nonrobust = outcome.get("k_nonrobust")
     whitening_by_k = {
@@ -1465,43 +1710,56 @@ def generate_phase1_report(
             last_max_min_ratio,
         )
     )
+    specificity_table_rows = []
+    for block, normalized_gap in (
+        ("directional", directional_gap),
+        ("volatility", volatility_gap),
+        ("timing", timing_gap),
+    ):
+        normalized_ratio = (
+            "—"
+            if block == "directional"
+            else f"{_format_optional(specificity_ratios[f'directional_over_{block}'], 2)}×"
+        )
+        raw_ratio = (
+            "—"
+            if block == "directional"
+            else f"{_format_optional(raw_specificity.get(f'directional_over_{block}'), 2)}×"
+        )
+        specificity_table_rows.append(
+            {
+                "target block": block,
+                "normalized gap (low-budget grid)": _format_optional(
+                    normalized_gap
+                ),
+                "raw R² gap (decisive budgets)": _format_optional(
+                    raw_gaps.get(block)
+                ),
+                "normalized directional/control": normalized_ratio,
+                "raw directional/control": raw_ratio,
+            }
+        )
     specificity_table = _markdown_table(
-        [
-            {
-                "target block": "directional",
-                "mean normalized finite-sample gap": _format_optional(
-                    directional_gap
-                ),
-                "directional / control": "—",
-            },
-            {
-                "target block": "volatility",
-                "mean normalized finite-sample gap": _format_optional(
-                    volatility_gap
-                ),
-                "directional / control": (
-                    f"{_format_optional(specificity_ratios['directional_over_volatility'], 2)}×"
-                    if np.isfinite(
-                        specificity_ratios["directional_over_volatility"]
-                    )
-                    else "n/a"
-                ),
-            },
-            {
-                "target block": "timing",
-                "mean normalized finite-sample gap": _format_optional(timing_gap),
-                "directional / control": (
-                    f"{_format_optional(specificity_ratios['directional_over_timing'], 2)}×"
-                    if np.isfinite(specificity_ratios["directional_over_timing"])
-                    else "n/a"
-                ),
-            },
-        ],
+        specificity_table_rows,
         [
             "target block",
-            "mean normalized finite-sample gap",
-            "directional / control",
+            "normalized gap (low-budget grid)",
+            "raw R² gap (decisive budgets)",
+            "normalized directional/control",
+            "raw directional/control",
         ],
+    )
+    sensitivity_table = _markdown_table(
+        [
+            {
+                "δ": f"{float(row['delta']):.2f}",
+                "technical class": row["outcome"],
+                "k_50gap": row.get("k_50gap") or "—",
+                "k_nonrobust": row.get("k_nonrobust") or "—",
+            }
+            for row in sensitivity_outcomes
+        ],
+        ["δ", "technical class", "k_50gap", "k_nonrobust"],
     )
     interval_table = _markdown_table(
         interval_table_rows,
@@ -1639,29 +1897,73 @@ def generate_phase1_report(
         specificity_ratios["directional_over_volatility"],
         specificity_ratios["directional_over_timing"],
     ]
-    if all(np.isfinite(value) for value in finite_ratios):
+    raw_ratios = [
+        _float_or_nan(raw_specificity.get("directional_over_volatility")),
+        _float_or_nan(raw_specificity.get("directional_over_timing")),
+    ]
+    if all(np.isfinite(value) for value in [*finite_ratios, *raw_ratios]):
         specificity_ratio_text = (
-            f"The descriptive directional/control ratios are `{finite_ratios[0]:.2f}×` "
-            f"and `{finite_ratios[1]:.2f}×`. They are point summaries, not an "
-            "independence-adjusted specificity test."
+            "The descriptive directional/control ratios are "
+            f"`{finite_ratios[0]:.2f}×` and `{finite_ratios[1]:.2f}×` on the "
+            f"normalized-recovery scale, versus `{raw_ratios[0]:.2f}×` and "
+            f"`{raw_ratios[1]:.2f}×` on the raw-R² scale. The magnitude is "
+            "therefore scale-dependent. These are point summaries, not an "
+            "independence-adjusted target-block interaction test."
         )
     else:
         specificity_ratio_text = (
-            "One or both control-block ratios are unavailable and no ratio claim is made."
+            "One or both raw/normalized control-block ratios are unavailable, so "
+            "no cross-scale ratio claim is made."
         )
 
     if k_50gap is not None and k_nonrobust is not None:
         if not np.isfinite(k_50_reduction):
             raise ValueError("k_50gap has no matching whitening candidate")
         maximum_tested_k = max(int(value) for value in whitening_by_k)
+        k_nonrobust_reduction = _float_or_nan(
+            whitening_by_k.get(k_nonrobust, {}).get("reduction_fraction")
+        )
+        transition_rows = _gap_summary_subset(
+            gap,
+            reader_family="ridge_whiten_topk_tuned_alpha",
+            feature_view="full_rank_whiten_topk",
+        )
+        transition_rows = transition_rows[
+            transition_rows["whiten_k_requested"].eq(float(k_nonrobust))
+            & transition_rows["budget_days_per_stock"].astype(float).isin(
+                [float(value) for value in decisive_budgets]
+            )
+        ].sort_values("budget_days_per_stock")
+        positive_interval_text = ""
+        if len(transition_rows) == len(decisive_budgets):
+            means = ", ".join(f"`{value:.6f}`" for value in transition_rows["mean"])
+            lowers = ", ".join(
+                f"`{value:.6f}`" for value in transition_rows["lower"]
+            )
+            if bool((transition_rows["lower"] > 0.0).all()):
+                positive_interval_text = (
+                    f" The decisive-budget mean gaps are {means}, and their lower "
+                    f"interval bounds remain positive ({lowers})."
+                )
         whitening_summary_text = (
             f"At `k_50gap={int(k_50gap)}`, whitening reduces the decisive-budget "
             f"gap by `{k_50_reduction:.1%}` but does not eliminate it. "
-            f"Non-robustness first appears at `k_nonrobust={int(k_nonrobust)}`; "
+            f"At the historical technical field `k_nonrobust={int(k_nonrobust)}`, "
+            f"the gap no longer meets the compound preregistered criterion "
+            f"`lower > 0 and mean ≥ δ={float(outcome['delta']):.2f}` at both "
+            "decisive budgets; this is an effect-threshold transition, not a "
+            "confidence interval crossing zero."
+            f"{positive_interval_text} "
             + (
-                "this is the maximum tested valid whitening depth. "
+                "It is the maximum tested valid whitening depth. "
                 if int(k_nonrobust) == maximum_tested_k
-                else "this is below the maximum tested valid whitening depth. "
+                else "It is below the maximum tested valid whitening depth. "
+            )
+            + (
+                f"The mean decisive-budget gap is reduced by "
+                f"`{k_nonrobust_reduction:.1%}` there. "
+                if np.isfinite(k_nonrobust_reduction)
+                else ""
             )
             + "This pattern does not support concentration in only a few leading PCs."
         )
@@ -1706,6 +2008,8 @@ def generate_phase1_report(
             "timing": timing_gap,
             **specificity_ratios,
         },
+        "phase1_raw_decisive_budget_gap": raw_specificity,
+        "delta_sensitivity": sensitivity_outcomes,
     }
 
     adjacent_pair_text = ", ".join(
@@ -1780,7 +2084,7 @@ def generate_phase1_report(
 
     narrative_summary = f"""# Narrative summary — Experiment 01 Phase I
 
-## Primary scientific result: specificity across three diagnostics
+## Primary Phase-I result: reader-relative finite-sample accessibility
 
 Conditional on the frozen representations and a newly fitted linear reader,
 the supervised representation is more accessible at low reader-label budgets.
@@ -1801,11 +2105,19 @@ direction, `{_format_optional(volatility_gap, 6)}` for volatility and
 - {recovery_summary_text}
 - {whitening_summary_text}
 
-## Secondary frozen technical classification
+## Frozen technical classification and mandatory sensitivity
 
-The preregistered Phase-I classification remains **{outcome['outcome']}**.
-Nothing in this narrative revision changes its thresholds, result rows or
-decision rule. The separate operational ceiling fact is reported as
+At the preregistered primary threshold `δ={float(outcome['delta']):.2f}`, the
+frozen Phase-I classifier returns **{outcome['outcome']}**. This technical label
+is secondary to the empirical accessibility result. The mandatory sensitivity
+grid is:
+
+{sensitivity_table}
+
+These sensitivity rows do not replace the primary threshold. They show that
+the taxonomy label is threshold-sensitive even though the underlying gap curve
+is unchanged. Nothing in this narrative revision changes thresholds, result
+rows or the decision rule. The separate operational ceiling fact is reported as
 **{outcome['outcome']} with a robust ceiling gap**; `B` is not treated as a
 coexisting outcome.
 
@@ -1821,7 +2133,7 @@ equal the old validation split. {later_phase_status_text}
 
     report = f"""# Report — Experiment 01 Phase I
 
-## Primary scientific result: specificity across three diagnostics
+## Primary Phase-I result: reader-relative finite-sample accessibility
 
 The Phase-I result supports the following restricted statement: conditional on
 the frozen representations and a newly fitted reader, the supervised
@@ -1847,7 +2159,8 @@ as an additional A/B/D outcome.
 
 ### Finite-sample specificity
 
-The normalized-gap point summaries are:
+The table distinguishes normalized gaps over the frozen low-budget grid from
+raw-R² gaps averaged over the recorded decisive budgets:
 
 {specificity_table}
 
@@ -1872,13 +2185,28 @@ operational ceiling. {recovery_summary_text} The frozen summary records the adja
 
 {whitening_summary_text}
 
-## Secondary frozen preregistered classification
+## Frozen preregistered classification and δ sensitivity
 
-The frozen Phase-I technical classification is **{outcome['outcome']}**.
-Technical rule satisfied: {narrative_outcome_reason}. The result rows,
-thresholds and classification logic have not been modified. The operational
-ceiling result is stated separately as **{outcome['outcome']} with a robust
-ceiling gap**; `B` is not a coexisting outcome.
+At the preregistered primary threshold `δ={float(outcome['delta']):.2f}`, the
+frozen Phase-I technical classifier returns **{outcome['outcome']}**. This label
+is reported secondarily to the empirical accessibility result. In the
+historical rule, “robust” is a
+compound practical-effect criterion: the interval lower bound must exceed zero
+and the point estimate must reach `δ`. It does not mean only “statistically
+different from zero.”
+
+{sensitivity_table}
+
+The `δ=0.05` and `δ=0.15` rows are mandatory preregistered sensitivities, not
+alternative primary outcomes. A label change across this grid means that the
+taxonomy is threshold-sensitive; it does not alter any measured gap. The
+result rows, thresholds and classification logic have not been modified. The
+operational ceiling result is stated separately as **{outcome['outcome']} with
+a robust ceiling gap**; `B` is not a coexisting outcome.
+
+The frozen machine reason is retained verbatim in the record below. Its phrase
+“makes it non-robust” must be read according to the compound criterion above,
+not as a confidence interval crossing zero.
 
 The complete machine-readable record is reproduced for auditability:
 
@@ -1966,7 +2294,10 @@ two chronological halves of the former held-out stock-days.
 - alpha is selected on the fixed complete validation split;
 - the fixed complete test split is evaluated only after configuration fixing;
 - directional, volatility and timing are summarized separately;
-- normalized recovery is target-wise and only uses full-budget R² at least 0.01.
+- normalized recovery is target-wise and only uses full-budget R² at least 0.01;
+- the `R² ≥ 0.01` ceiling-eligibility rule is evaluated on full-budget test
+  outcomes; it is part of metric definition, not validation-time hyperparameter
+  selection.
 
 {n_over_d_text}
 
@@ -1974,8 +2305,9 @@ two chronological halves of the former held-out stock-days.
 
 - The dataset contains seven stocks from one market/domain.
 - The historical split is stock-day-group-disjoint but not globally
-  chronological; the same calendar date may occur on different split sides for
-  different stocks.
+  chronological. Within each stock, train days span almost the full calendar
+  year and occur both before and after held-out validation/test days; this is
+  not a forward-only temporal-generalization design.
 - Validation and test are chronological halves of a historically explored
   held-out set, so the new test is not a pristine external confirmation set.
 - Fractional budgets vary within-day endpoint coverage while retaining seven
@@ -2047,6 +2379,11 @@ outcome or the fit pipeline.
             "sha256": sha256_file(summary_path),
         },
     }
+    for delta, path in gap_paths.items():
+        protected_inputs[f"gap_summary_delta_{delta:.2f}"] = {
+            "path": portable_source_path(path),
+            "sha256": sha256_file(path),
+        }
     if spectral.get("available"):
         protected_inputs["phase2_summary"] = {
             "path": portable_source_path(str(spectral["source_path"])),
@@ -2124,6 +2461,31 @@ outcome or the fit pipeline.
                 "mean over frozen low-budget grid",
                 "summary; report/finite-sample specificity",
             )
+    for row in sensitivity_outcomes:
+        delta = float(row["delta"])
+        add_claim(
+            f"phase1.delta_sensitivity.{delta:.2f}",
+            "I",
+            "A1/A2/B/D sensitivity classification",
+            row,
+            gap_paths[delta],
+            "mean,lower,upper,delta,robust",
+            "directional/last_concat512/frozen reader and whitening families",
+            "frozen taxonomy reapplied to serialized gap summaries",
+            "summary; report/delta sensitivity",
+        )
+    if raw_specificity.get("available"):
+        add_claim(
+            "phase1.raw_specificity.decisive_budgets",
+            "I",
+            "raw supervised-minus-horizon gap and directional/control ratios",
+            raw_specificity,
+            destination / "16_critical_budget_metrics.parquet",
+            "raw_test_r2_mean",
+            "last_concat512;independent targets;decisive budgets",
+            "paired arm difference, then mean across decisive budgets",
+            "summary; report/finite-sample specificity",
+        )
     if pooling.get("available"):
         raw_uncertainty_path = summary_root / "raw_uncertainty.parquet"
         for branch, values in pooling["values"].items():
@@ -2172,7 +2534,29 @@ outcome or the fit pipeline.
 
     changelog = f"""# Changelog — Experiment 01 Phase I narrative revision
 
-Revision date: 2026-08-25.
+Latest consolidation date: 2026-08-27.
+
+## Adversarial-audit consolidation — 2026-08-27
+
+- Kept the frozen `{outcome['outcome']}` classifier output at the preregistered
+  primary threshold `δ={float(outcome['delta']):.2f}` and added the mandatory `δ=0.05/0.15`
+  classifications from the existing serialized gap summaries.
+- Defined the historical `robust` flag explicitly as the compound condition
+  `lower > 0 and mean ≥ δ`. At `k_nonrobust={k_nonrobust}`, the report now
+  distinguishes failure of that practical-effect criterion from a confidence
+  interval crossing zero.
+- Added the full-depth gap reduction
+  `{_format_optional(whitening_by_k.get(k_nonrobust, {}).get('reduction_fraction'), 6)}`
+  while retaining `k_50gap={k_50gap}` and every frozen whitening result.
+- Added raw decisive-budget arm gaps and raw directional/control ratios beside
+  normalized recovery, with an explicit scale-dependence label.
+- Clarified that train stock-days occur both before and after held-out days and
+  that ceiling eligibility is a test-outcome metric definition, not a selected
+  hyperparameter.
+- Added an artifact-derived Phase-I claim map; no feature, reader or encoder was
+  regenerated.
+
+## Earlier narrative revision — 2026-08-25
 
 ## Narrative changes
 
@@ -2246,6 +2630,8 @@ Revision date: 2026-08-25.
         "outcome": outcome,
         "specificity_findings": findings,
         "specificity_ratios": specificity_ratios,
+        "raw_specificity": raw_specificity,
+        "delta_sensitivity": sensitivity_outcomes,
         "global_scale_audit": scale_audit,
         "regularization_audit": regularization_audit,
         "figure_06_audit": figure_06_audit,
@@ -2262,7 +2648,7 @@ Revision date: 2026-08-25.
         },
         "protected_inputs": protected_inputs,
         "narrative_revision": {
-            "date": "2026-08-25",
+            "date": "2026-08-27",
             "superseded_report_identity": "version_control_history",
             "results_or_technical_summary_modified": False,
         },

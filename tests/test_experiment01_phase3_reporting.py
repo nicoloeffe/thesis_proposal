@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from pathlib import Path
 
 from experiment01.linear import SufficientStats
 from experiment01.phase3_reporting import (
@@ -225,3 +226,15 @@ def test_crossfit_predictor_uses_opposite_fold_statistics():
     b.add_rows(x_b, y_b)
     score = _crossfit_predictor_r2(a, b, np.ones(3), np.arange(3))
     assert score[0] > 0.9
+
+
+def test_phase3_report_keeps_r3_secondary_when_low_budget_fits_fail():
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "experiment01"
+        / "phase3_reporting.py"
+    ).read_text(encoding="utf-8")
+    assert "Primary scientific result and identifiability" in source
+    assert "Frozen preregistered technical classification" in source
+    assert "not identified in the executed regime" in source
+    assert "difference between failed fits" in source

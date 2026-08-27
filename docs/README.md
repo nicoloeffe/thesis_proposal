@@ -16,6 +16,7 @@ scientific and operational state.
 ## Supervisor review
 
 - [Short supervisor reading guide](review/SUPERVISOR_READING_GUIDE.md)
+- [F16 claim map and corrective interpretation](review/F16_CLAIM_MAP.md)
 - [Frozen Opus adversarial-audit prompt](review/OPUS_ADVERSARIAL_AUDIT_PROMPT.md)
 
 ## Protocol and implementation
@@ -33,7 +34,7 @@ scientific and operational state.
 - [Phase II — spectral localization](results/phase2/REPORT_EXPERIMENT_01_PHASE2.md)
 - [Phase III-R — reader-relative accessibility](results/phase3r/REPORT_EXPERIMENT_01_PHASE3.md)
 - [T2 — token-role matched null](results/token_role/REPORT_EXPERIMENT_01_TOKEN_ROLE.md)
-- [F16 — label-matched supervised dose response](results/f16/REPORT_EXPERIMENT_01_F16.md)
+- [F16 — label-matched supervision diagnostic](results/f16/REPORT_EXPERIMENT_01_F16.md)
 
 The scientific reports preserve necessary reproduction and parity statements.
 Superseded workspace inventories, internal handoff notes and exploratory probe

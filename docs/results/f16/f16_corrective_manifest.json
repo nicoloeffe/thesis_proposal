@@ -1,0 +1,40 @@
+{
+  "artifacts": [
+    {
+      "path": "f16_corrective_reanalysis.json",
+      "sha256": "688dc7123ee48d2713b671de164c5a6f141732a367d4d6d303f7ebf4bf6ed1ea",
+      "size_bytes": 4910
+    },
+    {
+      "path": "f16_family_audit.parquet",
+      "sha256": "9de421744551107e0a6ef1f3d2f33e9e0db455ca8fe3ea6b9ed3fa9663b732b6",
+      "size_bytes": 9544
+    },
+    {
+      "path": "f16_saturation_table.parquet",
+      "sha256": "a15c83eba3c6fccdb3106e6727b182368d7659033d6fced538f8fef94d6e3753",
+      "size_bytes": 8307
+    },
+    {
+      "path": "REPORT_EXPERIMENT_01_F16.md",
+      "sha256": "0b474844b45abe83bcfff9130968f6d1abb6c1fc08a4ab7873af3fab6c206cef",
+      "size_bytes": 6778
+    }
+  ],
+  "manifest_fingerprint": "f7b38d199a6ba8007065066939346577e9d3c794e10021b194c32e8ef32f4c2b",
+  "phase1_outcome_modified": false,
+  "reporting_source_sha256": "295b5f23ab57406256b0af7defbd37200576e03a0e6df240ef97df374c1b0bdd",
+  "revision_date": "2026-08-27",
+  "schema_name": "thesis.experiment01.f16_corrective_manifest",
+  "schema_version": 1,
+  "scientific_result_tables_modified": false,
+  "scope": "report_and_read_only_reaggregation",
+  "source_hashes": {
+    "f16_geometry.parquet": "edff15f5581c5983c64460970561006ec353d0842b9deee839c290282cb0e2cb",
+    "f16_grouped_uncertainty.parquet": "765fa96254309e8afd349bd921a288eb30f3d9348fb0eaff268546f392799279",
+    "f16_posttest_threshold_amendment.json": "8a4f702d685d04f9d44e7650774404cb1b4e7372bf082f1399aec42db4619ea8",
+    "f16_results.parquet": "2b2201930da7908d8889040ca5a034fb640b17a42167c33de2d566a3ad661c84",
+    "f16_summary.json": "ef69b6e62020b425426fd6b58e91e743446847df15dba5a1bef498991848efc1"
+  },
+  "status": "complete"
+}

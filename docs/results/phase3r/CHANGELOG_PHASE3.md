@@ -8,4 +8,6 @@
 - Removed capacity sensitivity and redundant nonlinear spectral arms; frozen Phase II remains the detailed spectral analysis.
 - Reused only exact v1 selection cells after fingerprint and artifact-hash verification.
 - Preserved the MLP, optimizer, stopping schedule, weight-decay grid, splits, targets, metrics, thresholds, R1--R4 rules and Phase-I A1 outcome.
-- Reframed R3 as a technical result for the selected MLP family, added raw R² distributions beside normalized gaps, and labelled uncertainty as computational robustness.
+- Retained R3 as the frozen technical classifier output, but moved the identified full-budget ceiling to the scientific headline.
+- Marked the low-budget conditioning mechanism as not identified because both full-whitened branches have uniformly negative raw R² at the minimum budget.
+- Kept all raw R² distributions beside normalized gaps and labelled uncertainty as computational robustness.

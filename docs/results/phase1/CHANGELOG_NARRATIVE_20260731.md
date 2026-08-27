@@ -1,6 +1,28 @@
 # Changelog — Experiment 01 Phase I narrative revision
 
-Revision date: 2026-08-25.
+Latest consolidation date: 2026-08-27.
+
+## Adversarial-audit consolidation — 2026-08-27
+
+- Kept the frozen `A1` classifier output at the preregistered
+  primary threshold `δ=0.10` and added the mandatory `δ=0.05/0.15`
+  classifications from the existing serialized gap summaries.
+- Defined the historical `robust` flag explicitly as the compound condition
+  `lower > 0 and mean ≥ δ`. At `k_nonrobust=508`, the report now
+  distinguishes failure of that practical-effect criterion from a confidence
+  interval crossing zero.
+- Added the full-depth gap reduction
+  `0.925641`
+  while retaining `k_50gap=128` and every frozen whitening result.
+- Added raw decisive-budget arm gaps and raw directional/control ratios beside
+  normalized recovery, with an explicit scale-dependence label.
+- Clarified that train stock-days occur both before and after held-out days and
+  that ceiling eligibility is a test-outcome metric definition, not a selected
+  hyperparameter.
+- Added an artifact-derived Phase-I claim map; no feature, reader or encoder was
+  regenerated.
+
+## Earlier narrative revision — 2026-08-25
 
 ## Narrative changes
 

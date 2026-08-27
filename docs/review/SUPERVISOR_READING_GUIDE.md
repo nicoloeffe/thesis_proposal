@@ -14,15 +14,19 @@ La domanda centrale è:
 ## Lettura essenziale — circa 30 minuti
 
 1. [Cosa abbiamo fatto e cosa no](../research/COSA_ABBIAMO_FATTO_E_COSA_NO.md)
-2. [Research note](../research/RESEARCH_NOTE_GEOMETRY_ACCESSIBILITY.md),
+2. [Phase-I claim map](PHASE1_CLAIM_MAP.md)
+3. [Research note](../research/RESEARCH_NOTE_GEOMETRY_ACCESSIBILITY.md),
    sezioni 1–4 e 6–7
-3. [Phase I](../results/phase1/REPORT_EXPERIMENT_01.md), sezioni iniziali
-4. [Phase II](../results/phase2/REPORT_EXPERIMENT_01_PHASE2.md), “Diagnosi in
+4. [Phase I](../results/phase1/REPORT_EXPERIMENT_01.md), sezioni iniziali
+5. [Phase-II claim map](PHASE2_CLAIM_MAP.md)
+6. [Phase II](../results/phase2/REPORT_EXPERIMENT_01_PHASE2.md), “Diagnosi in
    breve”
-5. [T2 token-role](../results/token_role/REPORT_EXPERIMENT_01_TOKEN_ROLE.md),
+7. [Phase-III-R claim map](PHASE3R_CLAIM_MAP.md)
+8. [T2 token-role](../results/token_role/REPORT_EXPERIMENT_01_TOKEN_ROLE.md),
    “Result” e “Interpretation for the simulator”
-6. [F16](../results/f16/REPORT_EXPERIMENT_01_F16.md), “Result” e
-   “Dose-response checks”
+9. [F16 claim map](F16_CLAIM_MAP.md)
+10. [F16](../results/f16/REPORT_EXPERIMENT_01_F16.md), “Result” e
+   “Minimum-budget saturation”
 
 ## Risultato da portare alla discussione
 
@@ -32,11 +36,21 @@ poche etichette. Tre osservazioni distinte sostengono questa descrizione:
 
 - anti-allineamento fra varianza principale e massa predittiva;
 - perdita selettiva sotto media temporale;
-- riduzione, ma non eliminazione immediata, del gap tramite whitening.
+- riduzione del `55,6%` a `k=128` e del `92,6%` a `k=508` tramite whitening.
 
-Un MLP aumenta il ceiling operativo horizon-JEPA. F16 mostra inoltre che alcune
-proprietà di accessibilità cambiano ordinatamente con il volume di supervisione
-target-aligned. Non tutte le metriche geometriche seguono però la stessa curva.
+Il gap a `k=508` resta positivo: `k_nonrobust` indica il mancato raggiungimento
+del criterio composto di effect size a `δ=0,10`, non una confidence interval
+che attraversa zero. Al threshold primario `δ=0,10` il classificatore tecnico
+restituisce `A1`, ma la sensitivity preregistrata produce `D` a `δ=0,05` e
+`A1` a `δ=0,15`; la label resta scientificamente secondaria.
+
+Un MLP aumenta il ceiling operativo horizon-JEPA all'86–91% del supervised.
+La parte low-budget di Phase III-R non identifica però la persistenza oltre il
+conditioning: dopo whitening entrambi i rami hanno fit sistematicamente
+negativi al budget minimo. F16 mostra inoltre una transizione ampia già con lo
+`0,108%` del train: i gap label-matched sono robustamente positivi, ma la legge
+smooth al volume non sopravvive alla deduplicazione delle famiglie e soltanto
+Axis A è strettamente monotona in tutti i seed.
 
 ## Correzione scientifica già incorporata
 
@@ -51,8 +65,10 @@ Hadamard privilegiato.
 - “JEPA perde informazione”;
 - “il segnale vive in poche componenti profonde”;
 - “il whitening corregge causalmente l'encoder”;
+- “R3 dimostra una difficoltà persistente oltre il conditioning”;
 - “la media temporale e il complemento di ruolo misurano lo stesso fenomeno”;
 - “F16 dimostra causalmente una legge universale del training supervisionato”;
+- “F16 dimostra una dose-response smooth al volume di label”;
 - “il test è una conferma esterna incontaminata”.
 
 ## Decisioni richieste al relatore
@@ -76,7 +92,9 @@ geometria conviene introdurre una piccola rete o un regolarizzatore.
 - split stock-day: disgiunto e hashato;
 - encoder canonici: tre bracci × tre seed;
 - Phase I, II, III-R, T2 e F16: complete;
-- test software: 187 passati;
+- revisione F16 read-only: risultati congelati, flag smooth corretto dopo
+  deduplicazione;
+- test software: 190 passati;
 - risultati leggeri e checksum: versionati in Git;
 - dataset, bundle e checkpoint: esterni, hashati e documentati.
 
