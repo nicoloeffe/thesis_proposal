@@ -421,7 +421,7 @@ At \(m/D=1/32\):
 | supervised, last | 0.8971 | 0.6118 | 0.3756 |
 
 ![Normalized accessibility for the final concatenated token
-readout](../../validation/readouts_v2_20260728/analysis_consolidation_20260728/plot_ladder_normalized_last_concat512.png)
+readout](../results/phase2/figures/01_predictive_mass.png)
 
 *Figure 1. Fraction of full-rank directional \(R^2\) recovered as a function
 of variance-ordered rank. Solid lines show the observed PCA ladder, dotted

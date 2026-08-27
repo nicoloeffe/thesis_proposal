@@ -15,6 +15,12 @@ The repository contains the frozen protocol, implementation, tests, compact
 result package and manifests needed to audit that claim. Large datasets,
 feature bundles and checkpoints are distributed separately.
 
+For the shortest rigorous account, start with
+[What we did and did not establish](docs/research/COSA_ABBIAMO_FATTO_E_COSA_NO.md).
+The [supervisor reading guide](docs/review/SUPERVISOR_READING_GUIDE.md) turns
+the empirical record into the decisions needed before building the controlled
+mathematical model.
+
 ## Scientific question
 
 For a history $\mathcal H_t$, a token-preserving encoder produces
@@ -103,10 +109,11 @@ The three diagnostic phases answer complementary questions:
 
 ## Main findings
 
-1. **The finite-sample penalty is direction-specific.** The normalized Phase-I
+1. **The finite-sample penalty is descriptively largest for direction.** The normalized Phase-I
    gap is `0.5460` for direction, versus `0.1838` for volatility and `0.1528`
    for timing. The directional penalty is therefore roughly 3–3.5 times the
-   control gaps.
+   control gaps. This ratio is not an independence-adjusted target-block
+   interaction test.
 
 2. **There is also a distinct linear ceiling gap.** Under the primary readout,
    the robust supervised–horizon-JEPA operational ceiling difference is about
@@ -129,13 +136,20 @@ The three diagnostic phases answer complementary questions:
    `meanK_concatS`; supervised remains approximately stable
    (`0.3853` to `0.3941`).
 
-6. **A nonlinear reader recovers content, while the selected low-budget MLP
+6. **A nonlinear reader raises operational performance, while the selected low-budget MLP
    remains unstable.** Phase III-R is technically classified `R3`: the frozen
    MLP protocol raises the horizon-JEPA full-budget ceiling, including to
    `0.9119` of supervised after full whitening, but its low-budget raw
    directional R² is often negative. The resulting normalized gaps are
    reader-specific diagnostics, not evidence for a general nonlinear
    accessibility law.
+
+7. **Target-aligned supervision produces a partial dose response.** In F16 all
+   12 primary supervised-minus-horizon gaps are positive with grouped
+   intervals excluding zero. Accessibility, pooling loss and whitening-k128
+   move monotonically with supervision volume across seeds, whereas role
+   retention and top-k predictive mass do not. F16 therefore supports no
+   single all-metrics geometric mechanism.
 
 ![Predictive mass across the covariance spectrum](docs/results/phase2/figures/01_predictive_mass.png)
 
@@ -163,6 +177,8 @@ The broader mathematical framing and proposed follow-up programme are in
 - [Phase III-R — reader-relative accessibility](docs/results/phase3r/REPORT_EXPERIMENT_01_PHASE3.md)
 - [T2 — token-role matched-null diagnostic](docs/results/token_role/REPORT_EXPERIMENT_01_TOKEN_ROLE.md)
 - [F16 — label-matched supervised dose response](docs/results/f16/REPORT_EXPERIMENT_01_F16.md)
+- [What we did and did not establish](docs/research/COSA_ABBIAMO_FATTO_E_COSA_NO.md)
+- [Supervisor reading guide](docs/review/SUPERVISOR_READING_GUIDE.md)
 - [Training protocol and nine-checkpoint audit](docs/experiment01/TRAINING_PROTOCOL.md)
 - [F16 label-matched dose-response preregistration](docs/experiment01/SPEC_EXPERIMENT_01_F16_LABEL_MATCHED.md)
 - [Frozen Experiment 01 specification](docs/experiment01/SPEC_EXPERIMENT_01_SAMPLE_EFFICIENCY_20260730.md)

@@ -6,9 +6,17 @@ scientific and operational state.
 
 ## Theory
 
+- [What we did and did not establish](research/COSA_ABBIAMO_FATTO_E_COSA_NO.md):
+  central claim ledger, experimental sequence, negative results and explicit
+  boundaries.
 - [Geometry and Accessibility of Predictive Information](research/RESEARCH_NOTE_GEOMETRY_ACCESSIBILITY.md):
   formal distinction between predictive content, pooling preservation,
   finite-sample accessibility and decoder co-adaptation.
+
+## Supervisor review
+
+- [Short supervisor reading guide](review/SUPERVISOR_READING_GUIDE.md)
+- [Frozen Opus adversarial-audit prompt](review/OPUS_ADVERSARIAL_AUDIT_PROMPT.md)
 
 ## Protocol and implementation
 
@@ -24,6 +32,8 @@ scientific and operational state.
 - [Phase I — finite-sample accessibility](results/phase1/REPORT_EXPERIMENT_01.md)
 - [Phase II — spectral localization](results/phase2/REPORT_EXPERIMENT_01_PHASE2.md)
 - [Phase III-R — reader-relative accessibility](results/phase3r/REPORT_EXPERIMENT_01_PHASE3.md)
+- [T2 — token-role matched null](results/token_role/REPORT_EXPERIMENT_01_TOKEN_ROLE.md)
+- [F16 — label-matched supervised dose response](results/f16/REPORT_EXPERIMENT_01_F16.md)
 
 The scientific reports preserve necessary reproduction and parity statements.
 Superseded workspace inventories, internal handoff notes and exploratory probe

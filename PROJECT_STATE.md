@@ -25,6 +25,11 @@ nessuno di questi artefatti.
 
 ## Conclusione scientifica
 
+Guida interpretativa centrale:
+[COSA_ABBIAMO_FATTO_E_COSA_NO.md](docs/research/COSA_ABBIAMO_FATTO_E_COSA_NO.md).
+Percorso breve per il relatore:
+[SUPERVISOR_READING_GUIDE.md](docs/review/SUPERVISOR_READING_GUIDE.md).
+
 Il confronto distingue contenuto predittivo, interfaccia di readout e
 accessibilità finite-sample.
 

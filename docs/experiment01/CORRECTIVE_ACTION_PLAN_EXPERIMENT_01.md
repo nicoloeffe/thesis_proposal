@@ -1,12 +1,12 @@
 # Experiment 01 — corrective action plan
 
-**Version:** 0.1 — working plan, to be converted into frozen preregistrations
+**Version:** 1.0 — completed corrective execution record
 
 **Date:** 2026-08-25
 
 **Scope:** Phase I, Phase II, Phase III-R, token-role diagnostic and F16
 
-**Status:** implementation plan; no new production result is authorized by this document alone
+**Status:** T0–T4 complete; T5 delivered in the supervisor and claim-boundary documents. The frozen specifications, not this retrospective record, authorized each production analysis.
 
 ## 1. Objective
 
