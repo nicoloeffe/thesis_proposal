@@ -1,0 +1,665 @@
+{
+  "changelog": "CHANGELOG_NARRATIVE_20260731.md",
+  "claim_table": {
+    "n_rows": 13,
+    "path": "17_claim_table.parquet"
+  },
+  "critical_budget_metrics": {
+    "n_rows": 12,
+    "path": "16_critical_budget_metrics.parquet"
+  },
+  "figure_06_audit": {
+    "alpha_values": [
+      0.0,
+      1e-08,
+      2.511886431509582e-08,
+      6.30957344480193e-08,
+      1.584893192461114e-07,
+      3.981071705534969e-07,
+      1e-06,
+      2.5118864315095823e-06,
+      6.309573444801943e-06,
+      1.584893192461114e-05,
+      3.9810717055349695e-05,
+      0.0001,
+      0.0002511886431509582,
+      0.0006309573444801943,
+      0.001584893192461114,
+      0.003981071705534978,
+      0.01,
+      0.025118864315095822,
+      0.06309573444801943,
+      0.15848931924611143,
+      0.39810717055349776,
+      1.0,
+      2.5118864315095824,
+      6.309573444801943,
+      15.848931924611174
+    ],
+    "figure": "06_common_alpha_gap_surface.png",
+    "lambda_definition": "lambda = alpha * trace(covariance) / D",
+    "n_paired_surface_cells": 325,
+    "n_source_rows": 151554,
+    "reader_families_observed": [
+      "ridge_raw_common_alpha"
+    ],
+    "status": "generated",
+    "uses_common_absolute_lambda": false,
+    "uses_common_alpha": true
+  },
+  "figures": [
+    "01_raw_directional_r2.png",
+    "02_directional_normalized_recovery.png",
+    "03_supervised_jepa_normalized_gap.png",
+    "04_gap_vs_whitening_depth.png",
+    "05_raw_vs_whitened_learning_curves.png",
+    "06_common_alpha_gap_surface.png",
+    "07_min_norm_ols_learning_curves.png",
+    "09_low_budget_subsample_distributions.png",
+    "10_encoder_specific_curves.png",
+    "11_variance_decomposition.png",
+    "12_target_specificity_panels.png",
+    "13_readout_interaction_panels.png",
+    "14_ceiling_eligibility_map.png"
+  ],
+  "global_scale_audit": {
+    "last_concat512": {
+      "approximately_matched_within_10pct": false,
+      "jepa_horizon_over_supervised_ratio": 1.3961231190072076,
+      "jepa_horizon_supervised_trace_matched_within_10pct": false,
+      "max_over_min_ratio": 3.306248430729335,
+      "trace_cov_over_dim_by_branch": {
+        "jepa_horizon": 0.36091869271667787,
+        "jepa_masked": 0.8547146345258958,
+        "supervised": 0.2585149459979787
+      }
+    },
+    "meanK_concatS": {
+      "approximately_matched_within_10pct": false,
+      "jepa_horizon_over_supervised_ratio": 1.0159637122972474,
+      "jepa_horizon_supervised_trace_matched_within_10pct": true,
+      "max_over_min_ratio": 4.996132087662248,
+      "trace_cov_over_dim_by_branch": {
+        "jepa_horizon": 0.16902756978152125,
+        "jepa_masked": 0.8312147912995064,
+        "supervised": 0.16637166045953
+      }
+    }
+  },
+  "later_phase_context": {
+    "phase2": {
+      "status": "complete",
+      "summary_path": "validation/experiment01/execution_20260730/phase2/summary.json",
+      "summary_sha256": "bfc2c9f000d85d1555f3004bad73aa08728d20f54e9f28c86ba31f8a159a432e"
+    },
+    "phase3_r": {
+      "protocol_variant": "phase3_r_compute_feasible.v1",
+      "status": "complete",
+      "summary_path": "validation/experiment01/execution_20260730/phase3_reduced/summary.json",
+      "summary_sha256": "e5e707a40c040cd5062439670a1aa33a0b7ea21dd5b23c59557f2e9299d6c4d6",
+      "technical_outcome": "R3"
+    },
+    "spectral": {
+      "available": true,
+      "jepa_horizon": {
+        "haar": {
+          "empirical_p_max": 1.0,
+          "empirical_p_mean": 1.0,
+          "empirical_p_min": 1.0,
+          "n_encoder_seeds": 3
+        },
+        "predictive_mass": {
+          "lower": 8.805417973068673e-05,
+          "mean": 9.353837835605041e-05,
+          "upper": 9.670890142170652e-05
+        }
+      },
+      "k": 8,
+      "source_path": "validation/experiment01/execution_20260730/phase2/summary.json",
+      "source_sha256": "bfc2c9f000d85d1555f3004bad73aa08728d20f54e9f28c86ba31f8a159a432e",
+      "supervised": {
+        "haar": {
+          "empirical_p_max": 0.0,
+          "empirical_p_mean": 0.0,
+          "empirical_p_min": 0.0,
+          "n_encoder_seeds": 3
+        },
+        "predictive_mass": {
+          "lower": 0.7057163036017311,
+          "mean": 0.7517747454104488,
+          "upper": 0.7813183169731289
+        }
+      }
+    }
+  },
+  "narrative_revision": {
+    "date": "2026-08-25",
+    "results_or_technical_summary_modified": false,
+    "superseded_report_identity": "version_control_history"
+  },
+  "narrative_summary": "SUMMARY_NARRATIVE_EXPERIMENT_01.md",
+  "outcome": {
+    "absolute_ceiling_gap": {
+      "lower": 0.1607531894900738,
+      "mean": 0.16540515477348147,
+      "robust": true,
+      "upper": 0.16885745649215148
+    },
+    "decisive_budgets": [
+      0.125,
+      0.25
+    ],
+    "delta": 0.1,
+    "k_50gap": 128,
+    "k_nonrobust": 508,
+    "large_sample_ceiling_meaningful": true,
+    "low_budget_mean_normalized_gap": 0.5460198970445955,
+    "native_adjacent_robust_pairs": [
+      [
+        0.125,
+        0.25
+      ],
+      [
+        0.25,
+        0.5
+      ],
+      [
+        0.5,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        4
+      ]
+    ],
+    "native_low_budget_mean_gap": 0.7009716425183607,
+    "outcome": "A1",
+    "reason": "native finite-sample gap is robust at adjacent low budgets and progressive whitening reduces it by at least 50% and makes it non-robust",
+    "whitening_candidates": [
+      {
+        "all_nonrobust": false,
+        "all_robust": true,
+        "k": 0,
+        "mean_gap": 0.7009716425183556,
+        "reduction_fraction": 7.327471962526033e-15
+      },
+      {
+        "all_nonrobust": false,
+        "all_robust": true,
+        "k": 1,
+        "mean_gap": 0.6913073400240535,
+        "reduction_fraction": 0.013787009214219603
+      },
+      {
+        "all_nonrobust": false,
+        "all_robust": true,
+        "k": 2,
+        "mean_gap": 0.6844773584182045,
+        "reduction_fraction": 0.02353060109664029
+      },
+      {
+        "all_nonrobust": false,
+        "all_robust": true,
+        "k": 4,
+        "mean_gap": 0.6743530908242632,
+        "reduction_fraction": 0.037973792489616076
+      },
+      {
+        "all_nonrobust": false,
+        "all_robust": true,
+        "k": 8,
+        "mean_gap": 0.6577122128628066,
+        "reduction_fraction": 0.0617135231036412
+      },
+      {
+        "all_nonrobust": false,
+        "all_robust": true,
+        "k": 16,
+        "mean_gap": 0.6585066964384894,
+        "reduction_fraction": 0.060580119799581
+      },
+      {
+        "all_nonrobust": false,
+        "all_robust": true,
+        "k": 32,
+        "mean_gap": 0.6764809187948003,
+        "reduction_fraction": 0.03493825176090337
+      },
+      {
+        "all_nonrobust": false,
+        "all_robust": true,
+        "k": 64,
+        "mean_gap": 0.5633800038814455,
+        "reduction_fraction": 0.19628702545311782
+      },
+      {
+        "all_nonrobust": false,
+        "all_robust": true,
+        "k": 128,
+        "mean_gap": 0.31102723764057083,
+        "reduction_fraction": 0.5562912694682596
+      },
+      {
+        "all_nonrobust": false,
+        "all_robust": true,
+        "k": 256,
+        "mean_gap": 0.1602048230004235,
+        "reduction_fraction": 0.771453203977182
+      },
+      {
+        "all_nonrobust": true,
+        "all_robust": false,
+        "k": 508,
+        "mean_gap": 0.05212363313798933,
+        "reduction_fraction": 0.9256408819182381
+      }
+    ]
+  },
+  "parity": {
+    "historical_reproduction_gate": {
+      "available": true,
+      "evaluation_split": "val",
+      "passed": true,
+      "path": "docs/experiment01/REPRODUCTION_GATE_EXPERIMENT_01.json",
+      "reader_family": "min_norm_ols_raw",
+      "results": {
+        "jepa_horizon": {
+          "absolute_difference": 2.9254396631789303e-05,
+          "expected": 0.2111,
+          "observed": 0.2111292543966318,
+          "passed": true,
+          "per_encoder_seed": [
+            {
+              "aggregate_directional_r2": 0.21550615641138993,
+              "encoder_seed": 0
+            },
+            {
+              "aggregate_directional_r2": 0.20817414337744664,
+              "encoder_seed": 1
+            },
+            {
+              "aggregate_directional_r2": 0.20970746340105886,
+              "encoder_seed": 2
+            }
+          ],
+          "tolerance": 0.005
+        },
+        "supervised": {
+          "absolute_difference": 3.5571420161306655e-05,
+          "expected": 0.3756,
+          "observed": 0.3756355714201613,
+          "passed": true,
+          "per_encoder_seed": [
+            {
+              "aggregate_directional_r2": 0.3750951730882015,
+              "encoder_seed": 0
+            },
+            {
+              "aggregate_directional_r2": 0.37471965090159026,
+              "encoder_seed": 1
+            },
+            {
+              "aggregate_directional_r2": 0.37709189027069207,
+              "encoder_seed": 2
+            }
+          ],
+          "tolerance": 0.005
+        }
+      },
+      "sha256": "31d848bb51f59d072236d6799aa6121d6c289fdf044bebac897895c7868d853e"
+    },
+    "production_full_budget_test": {
+      "min_norm_ols_diagnostic": [
+        {
+          "branch": "jepa_horizon",
+          "lower": 0.21625621892174415,
+          "mean_test_r2": 0.21979083722119555,
+          "n_encoders": 3,
+          "upper": 0.22464885751626093
+        },
+        {
+          "branch": "jepa_masked",
+          "lower": 0.09402333645670202,
+          "mean_test_r2": 0.10702033978211407,
+          "n_encoders": 3,
+          "upper": 0.11531844690138149
+        },
+        {
+          "branch": "supervised",
+          "lower": 0.38521646478788557,
+          "mean_test_r2": 0.3853438833503024,
+          "n_encoders": 3,
+          "upper": 0.3854890012440036
+        }
+      ],
+      "parity_requirement": "none: the production test is a different chronological half of the historical held-out stock-days",
+      "split": "new canonical test",
+      "tuned_raw_ridge": [
+        {
+          "branch": "jepa_horizon",
+          "lower": 0.21648107495649507,
+          "mean_test_r2": 0.21994342851651347,
+          "n_encoders": 3,
+          "upper": 0.2247358117539298
+        },
+        {
+          "branch": "jepa_masked",
+          "lower": 0.09402333645670202,
+          "mean_test_r2": 0.10702033978211407,
+          "n_encoders": 3,
+          "upper": 0.11531844690138149
+        },
+        {
+          "branch": "supervised",
+          "lower": 0.38521821717733457,
+          "mean_test_r2": 0.38534858328999494,
+          "n_encoders": 3,
+          "upper": 0.3854890012440036
+        }
+      ]
+    }
+  },
+  "phase2_status": "complete",
+  "phase3_r_status": "complete",
+  "primary_result": {
+    "name": "frozen_phase1_outcome_with_separate_scientific_diagnostics",
+    "phase1_normalized_finite_sample_gap": {
+      "directional": 0.5460198970445955,
+      "directional_over_timing": 3.5744212973610536,
+      "directional_over_volatility": 2.970617818058522,
+      "timing": 0.15275756594437107,
+      "volatility": 0.18380684776254808
+    },
+    "pooling_diagnostic": {
+      "available": true,
+      "metric": "mean full-budget directional test R2",
+      "reader_family": "ridge_raw_tuned_alpha",
+      "values": {
+        "jepa_horizon": {
+          "last_concat512": 0.21994342851651347,
+          "meanK_concatS": 0.07008485689440626
+        },
+        "supervised": {
+          "last_concat512": 0.38534858328999494,
+          "meanK_concatS": 0.39409788744893653
+        }
+      }
+    },
+    "spectral_diagnostic": {
+      "available": true,
+      "jepa_horizon": {
+        "haar": {
+          "empirical_p_max": 1.0,
+          "empirical_p_mean": 1.0,
+          "empirical_p_min": 1.0,
+          "n_encoder_seeds": 3
+        },
+        "predictive_mass": {
+          "lower": 8.805417973068673e-05,
+          "mean": 9.353837835605041e-05,
+          "upper": 9.670890142170652e-05
+        }
+      },
+      "k": 8,
+      "source_path": "validation/experiment01/execution_20260730/phase2/summary.json",
+      "source_sha256": "bfc2c9f000d85d1555f3004bad73aa08728d20f54e9f28c86ba31f8a159a432e",
+      "supervised": {
+        "haar": {
+          "empirical_p_max": 0.0,
+          "empirical_p_mean": 0.0,
+          "empirical_p_min": 0.0,
+          "n_encoder_seeds": 3
+        },
+        "predictive_mass": {
+          "lower": 0.7057163036017311,
+          "mean": 0.7517747454104488,
+          "upper": 0.7813183169731289
+        }
+      }
+    }
+  },
+  "protected_inputs": {
+    "phase1_results": {
+      "path": "validation/experiment01/execution_20260730/phase1/results.parquet",
+      "sha256": "ecf4e410c595baa32d06a1998bbd5151794d02ff141499af3c1f56268e110ffb"
+    },
+    "phase2_summary": {
+      "path": "validation/experiment01/execution_20260730/phase2/summary.json",
+      "sha256": "bfc2c9f000d85d1555f3004bad73aa08728d20f54e9f28c86ba31f8a159a432e"
+    },
+    "phase3_r_summary": {
+      "path": "validation/experiment01/execution_20260730/phase3_reduced/summary.json",
+      "sha256": "e5e707a40c040cd5062439670a1aa33a0b7ea21dd5b23c59557f2e9299d6c4d6"
+    },
+    "technical_summary": {
+      "path": "validation/experiment01/execution_20260730/summary/summary.json",
+      "sha256": "7978961be69e50881ac022a67bfd7fea4f619c9806374121b57d6d4cbac1d4a6"
+    }
+  },
+  "regularization_audit": {
+    "absolute_lambda_comparison_policy": "confounded when covariance traces differ; omitted",
+    "absolute_lambda_comparisons_in_report": false,
+    "figure_06_audit": "06_common_alpha_audit.json",
+    "figure_06_reader_families_observed": [
+      "ridge_raw_common_alpha"
+    ],
+    "figure_06_status": "generated",
+    "figure_06_uses_common_alpha": true,
+    "lambda_definition": "lambda = alpha * trace(covariance) / D",
+    "scientific_common_regularization_parameter": "alpha",
+    "trace_matched": false
+  },
+  "report": "REPORT_EXPERIMENT_01.md",
+  "specificity_findings": {
+    "directional": {
+      "full_train_raw_r2": {
+        "jepa_horizon": 0.21994342851651347,
+        "jepa_masked": 0.10702033978211407,
+        "supervised": 0.38534858328999494
+      },
+      "interpretation_scope": "primary directional specificity result",
+      "n_recovery_curve_rows": 39
+    },
+    "timing": {
+      "full_train_raw_r2": {
+        "jepa_horizon": 0.5430492625434953,
+        "jepa_masked": 0.5127684048482807,
+        "supervised": 0.6063927375948467
+      },
+      "interpretation_scope": "preregistered specificity control",
+      "n_recovery_curve_rows": 39
+    },
+    "volatility": {
+      "full_train_raw_r2": {
+        "jepa_horizon": 0.49403668565822834,
+        "jepa_masked": 0.4739590590772728,
+        "supervised": 0.5165553854860679
+      },
+      "interpretation_scope": "preregistered specificity control",
+      "n_recovery_curve_rows": 39
+    }
+  },
+  "specificity_ratios": {
+    "directional_over_timing": 3.5744212973610536,
+    "directional_over_volatility": 2.970617818058522
+  },
+  "technical_classification": {
+    "label": "A1",
+    "role": "frozen_preregistered_technical_outcome",
+    "unchanged_record": {
+      "absolute_ceiling_gap": {
+        "lower": 0.1607531894900738,
+        "mean": 0.16540515477348147,
+        "robust": true,
+        "upper": 0.16885745649215148
+      },
+      "decisive_budgets": [
+        0.125,
+        0.25
+      ],
+      "delta": 0.1,
+      "k_50gap": 128,
+      "k_nonrobust": 508,
+      "large_sample_ceiling_meaningful": true,
+      "low_budget_mean_normalized_gap": 0.5460198970445955,
+      "native_adjacent_robust_pairs": [
+        [
+          0.125,
+          0.25
+        ],
+        [
+          0.25,
+          0.5
+        ],
+        [
+          0.5,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          4
+        ]
+      ],
+      "native_low_budget_mean_gap": 0.7009716425183607,
+      "outcome": "A1",
+      "reason": "native finite-sample gap is robust at adjacent low budgets and progressive whitening reduces it by at least 50% and makes it non-robust",
+      "whitening_candidates": [
+        {
+          "all_nonrobust": false,
+          "all_robust": true,
+          "k": 0,
+          "mean_gap": 0.7009716425183556,
+          "reduction_fraction": 7.327471962526033e-15
+        },
+        {
+          "all_nonrobust": false,
+          "all_robust": true,
+          "k": 1,
+          "mean_gap": 0.6913073400240535,
+          "reduction_fraction": 0.013787009214219603
+        },
+        {
+          "all_nonrobust": false,
+          "all_robust": true,
+          "k": 2,
+          "mean_gap": 0.6844773584182045,
+          "reduction_fraction": 0.02353060109664029
+        },
+        {
+          "all_nonrobust": false,
+          "all_robust": true,
+          "k": 4,
+          "mean_gap": 0.6743530908242632,
+          "reduction_fraction": 0.037973792489616076
+        },
+        {
+          "all_nonrobust": false,
+          "all_robust": true,
+          "k": 8,
+          "mean_gap": 0.6577122128628066,
+          "reduction_fraction": 0.0617135231036412
+        },
+        {
+          "all_nonrobust": false,
+          "all_robust": true,
+          "k": 16,
+          "mean_gap": 0.6585066964384894,
+          "reduction_fraction": 0.060580119799581
+        },
+        {
+          "all_nonrobust": false,
+          "all_robust": true,
+          "k": 32,
+          "mean_gap": 0.6764809187948003,
+          "reduction_fraction": 0.03493825176090337
+        },
+        {
+          "all_nonrobust": false,
+          "all_robust": true,
+          "k": 64,
+          "mean_gap": 0.5633800038814455,
+          "reduction_fraction": 0.19628702545311782
+        },
+        {
+          "all_nonrobust": false,
+          "all_robust": true,
+          "k": 128,
+          "mean_gap": 0.31102723764057083,
+          "reduction_fraction": 0.5562912694682596
+        },
+        {
+          "all_nonrobust": false,
+          "all_robust": true,
+          "k": 256,
+          "mean_gap": 0.1602048230004235,
+          "reduction_fraction": 0.771453203977182
+        },
+        {
+          "all_nonrobust": true,
+          "all_robust": false,
+          "k": 508,
+          "mean_gap": 0.05212363313798933,
+          "reduction_fraction": 0.9256408819182381
+        }
+      ]
+    },
+    "wording": "A1 with a robust ceiling gap"
+  },
+  "time_of_day_sensitivity_rows": 18,
+  "whitening_nonmonotonicity": {
+    "artifacts": {
+      "intervals": {
+        "n_rows": 12,
+        "path": "15_whitening_nonmonotonicity_intervals.parquet"
+      },
+      "paired_differences": {
+        "n_rows": 9,
+        "path": "15_whitening_nonmonotonicity_paired_differences.parquet"
+      },
+      "paired_differences_per_encoder": {
+        "n_rows": 27,
+        "path": "15_whitening_nonmonotonicity_paired_by_encoder.parquet"
+      },
+      "per_encoder": {
+        "n_rows": 36,
+        "path": "15_whitening_nonmonotonicity_by_encoder.parquet"
+      }
+    },
+    "scope": {
+      "bootstrap": {
+        "algorithm": "encoder_then_within_encoder_paired_resampling",
+        "n_draws": 5000,
+        "seed": 0
+      },
+      "budget_aggregation": "mean within encoder/subsample over decisive budgets before hierarchical resampling",
+      "decisive_budgets_days_per_stock": [
+        0.125,
+        0.25
+      ],
+      "gap": "supervised_minus_jepa_horizon_normalized_recovery",
+      "interpretation_policy": "diagnostic does not alter the preregistered technical outcome",
+      "reader_family": "ridge_whiten_topk_tuned_alpha",
+      "readout": "last_concat512",
+      "status": "post_hoc_diagnostic_only",
+      "target_blocks": [
+        "directional",
+        "volatility",
+        "timing"
+      ],
+      "whitening_depths": [
+        8,
+        16,
+        32,
+        64
+      ]
+    }
+  }
+}

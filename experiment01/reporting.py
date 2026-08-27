@@ -13,7 +13,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from .io import atomic_write_json, atomic_write_parquet, sha256_file
+from .io import (
+    atomic_write_json,
+    atomic_write_parquet,
+    atomic_write_text,
+    sha256_file,
+)
 from .results import hierarchical_interval, paired_gap_points
 
 
@@ -128,6 +133,306 @@ def _float_or_nan(value: object) -> float:
     except (TypeError, ValueError):
         return float("nan")
     return result if np.isfinite(result) else float("nan")
+
+
+def _require_finite(value: object, label: str) -> float:
+    result = _float_or_nan(value)
+    if not np.isfinite(result):
+        raise ValueError(f"required report metric is missing or non-finite: {label}")
+    return result
+
+
+def _format_budget(value: float) -> str:
+    return f"{float(value):g}"
+
+
+def _format_budget_list(values: Iterable[float]) -> str:
+    return ", ".join(f"`{_format_budget(value)}`" for value in values)
+
+
+def _format_optional(value: object, digits: int = 4) -> str:
+    number = _float_or_nan(value)
+    return f"{number:.{digits}f}" if np.isfinite(number) else "n/a"
+
+
+def _interval_zero_statement(lower: float, upper: float) -> str:
+    if lower > 0.0 or upper < 0.0:
+        return "The interval excludes zero."
+    return "The interval includes zero."
+
+
+def _load_json_object(path: Path, *, label: str) -> Mapping[str, object]:
+    try:
+        payload = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"cannot read {label}: {path}") from error
+    if not isinstance(payload, Mapping):
+        raise ValueError(f"{label} is not a JSON object: {path}")
+    return payload
+
+
+def _spectral_diagnostic_from_phase2(
+    phase2_summary_path: Path,
+) -> Mapping[str, object]:
+    """Load the Phase-II headline from its completed machine summary.
+
+    The Phase-I narrative may mention later spectral evidence, but it must not
+    silently reuse literals from an older PCA ladder.  If a Phase-II summary is
+    present, every field used here is therefore required and validated.
+    """
+    payload = _load_json_object(
+        phase2_summary_path, label="Phase-II summary"
+    )
+    if payload.get("status") != "complete" or payload.get("failure_count") != 0:
+        raise ValueError("detected Phase-II summary is not complete and failure-free")
+    if payload.get("phase1_modified") is not False:
+        raise ValueError("Phase-II summary does not attest that Phase I was unchanged")
+    findings = payload.get("findings")
+    if not isinstance(findings, Mapping):
+        raise ValueError("Phase-II summary has no findings object")
+    mass_rows = findings.get("directional_last_cumulative_mass")
+    null_rows = findings.get("directional_last_top_pca_haar")
+    if not isinstance(mass_rows, list) or not isinstance(null_rows, list):
+        raise ValueError("Phase-II summary lacks spectral headline tables")
+
+    headline_k = 8
+
+    def mass_for(branch: str) -> Mapping[str, object]:
+        selected = [
+            row
+            for row in mass_rows
+            if row.get("branch") == branch and row.get("k") == headline_k
+        ]
+        if len(selected) != 1:
+            raise ValueError(
+                f"Phase-II summary needs one {branch} mass row at k={headline_k}"
+            )
+        row = selected[0]
+        return {
+            "mean": _require_finite(row.get("mean"), f"{branch} top-k mass"),
+            "lower": _require_finite(row.get("lower"), f"{branch} mass lower"),
+            "upper": _require_finite(row.get("upper"), f"{branch} mass upper"),
+        }
+
+    def null_for(branch: str) -> Mapping[str, object]:
+        selected = [
+            row
+            for row in null_rows
+            if row.get("branch") == branch and row.get("k") == headline_k
+        ]
+        if not selected:
+            raise ValueError(
+                f"Phase-II summary has no {branch} Haar rows at k={headline_k}"
+            )
+        probabilities = np.asarray(
+            [
+                _require_finite(
+                    row.get("empirical_p_random_exceeds_top"),
+                    f"{branch} Haar empirical p",
+                )
+                for row in selected
+            ],
+            dtype=float,
+        )
+        return {
+            "n_encoder_seeds": len(selected),
+            "empirical_p_mean": float(probabilities.mean()),
+            "empirical_p_min": float(probabilities.min()),
+            "empirical_p_max": float(probabilities.max()),
+        }
+
+    return {
+        "available": True,
+        "source_path": str(phase2_summary_path),
+        "source_sha256": sha256_file(phase2_summary_path),
+        "k": headline_k,
+        "jepa_horizon": {
+            "predictive_mass": mass_for("jepa_horizon"),
+            "haar": null_for("jepa_horizon"),
+        },
+        "supervised": {
+            "predictive_mass": mass_for("supervised"),
+            "haar": null_for("supervised"),
+        },
+    }
+
+
+def _later_phase_context(results_path: Path) -> Mapping[str, object]:
+    execution_root = results_path.resolve().parent.parent
+    phase2_path = execution_root / "phase2" / "summary.json"
+    spectral: Mapping[str, object]
+    if phase2_path.is_file():
+        spectral = _spectral_diagnostic_from_phase2(phase2_path)
+        phase2 = {
+            "status": "complete",
+            "summary_path": str(phase2_path),
+            "summary_sha256": sha256_file(phase2_path),
+        }
+    else:
+        spectral = {"available": False, "reason": "Phase-II summary not present"}
+        phase2 = {"status": "not_present"}
+
+    phase3_path = execution_root / "phase3_reduced" / "summary.json"
+    if phase3_path.is_file():
+        phase3_payload = _load_json_object(
+            phase3_path, label="Phase-III-R summary"
+        )
+        if phase3_payload.get("status") != "complete":
+            raise ValueError("detected Phase-III-R summary is not complete")
+        phase3 = {
+            "status": "complete",
+            "protocol_variant": phase3_payload.get("protocol_variant"),
+            "technical_outcome": (
+                phase3_payload.get("outcome", {}).get("outcome")
+                if isinstance(phase3_payload.get("outcome"), Mapping)
+                else None
+            ),
+            "summary_path": str(phase3_path),
+            "summary_sha256": sha256_file(phase3_path),
+        }
+    else:
+        phase3 = {"status": "not_present"}
+    return {"phase2": phase2, "phase3_r": phase3, "spectral": spectral}
+
+
+def _pooling_diagnostic(raw_uncertainty: pd.DataFrame) -> Mapping[str, object]:
+    selected = raw_uncertainty[
+        raw_uncertainty["target_block"].eq("directional")
+        & raw_uncertainty["reader_family"].eq("ridge_raw_tuned_alpha")
+        & raw_uncertainty["feature_view"].eq("full_rank_raw")
+        & raw_uncertainty["budget_kind"].eq("full_train")
+        & raw_uncertainty["branch"].isin(["jepa_horizon", "supervised"])
+        & raw_uncertainty["readout"].isin(
+            ["last_concat512", "meanK_concatS"]
+        )
+    ]
+    values: dict[str, dict[str, float]] = {}
+    for branch in ("jepa_horizon", "supervised"):
+        values[branch] = {}
+        for readout in ("last_concat512", "meanK_concatS"):
+            rows = selected[
+                selected["branch"].eq(branch)
+                & selected["readout"].eq(readout)
+            ]
+            if len(rows) != 1:
+                return {
+                    "available": False,
+                    "reason": (
+                        "complete two-branch last/meanK full-budget cells "
+                        "are not present"
+                    ),
+                }
+            values[branch][readout] = _require_finite(
+                rows.iloc[0]["raw_r2_mean"], f"{branch}/{readout} raw R2"
+            )
+    return {
+        "available": True,
+        "metric": "mean full-budget directional test R2",
+        "reader_family": "ridge_raw_tuned_alpha",
+        "values": values,
+    }
+
+
+def _critical_budget_metrics(
+    results: pd.DataFrame, decisive_budgets: Iterable[float]
+) -> pd.DataFrame:
+    selected = results[
+        results["readout"].eq("last_concat512")
+        & results["reader_family"].eq("ridge_raw_tuned_alpha")
+        & results["feature_view"].eq("full_rank_raw")
+        & results["budget_days_per_stock"].isin(tuple(decisive_budgets))
+        & results["target_independent"].eq(True)
+        & results["fit_status"].eq("ok")
+        & results["branch"].isin(["jepa_horizon", "supervised"])
+    ].copy()
+    if selected.empty:
+        return pd.DataFrame()
+    rows: list[dict[str, object]] = []
+    keys = ["target_block", "budget_days_per_stock", "branch"]
+    for key, group in selected.groupby(keys, observed=True):
+        block, budget, branch = key
+        eligible = group[
+            group["ceiling_eligible"].eq(True)
+            & group["normalized_recovery"].map(np.isfinite)
+        ]
+        if eligible.empty:
+            continue
+        ceiling_cells = eligible[
+            [
+                "encoder_seed",
+                "target_name",
+                "full_budget_test_r2",
+                "ceiling_eligible",
+            ]
+        ].drop_duplicates()
+        counts = ceiling_cells.groupby("encoder_seed", observed=True)[
+            "target_name"
+        ].nunique()
+        raw_values = group["test_r2"].to_numpy(dtype=float)
+        recovery_values = eligible["normalized_recovery"].to_numpy(dtype=float)
+        ceiling_values = ceiling_cells["full_budget_test_r2"].to_numpy(
+            dtype=float
+        )
+        if not (
+            np.isfinite(raw_values).all()
+            and np.isfinite(recovery_values).all()
+            and np.isfinite(ceiling_values).all()
+        ):
+            raise ValueError("critical-budget table contains non-finite metrics")
+        rows.append(
+            {
+                "target_block": str(block),
+                "budget_days_per_stock": float(budget),
+                "branch": str(branch),
+                "raw_test_r2_mean": float(raw_values.mean()),
+                "raw_test_r2_median": float(np.median(raw_values)),
+                "negative_raw_test_r2_fraction": float(
+                    np.mean(raw_values < 0.0)
+                ),
+                "full_budget_ceiling_mean": float(ceiling_values.mean()),
+                "full_budget_ceiling_min": float(ceiling_values.min()),
+                "full_budget_ceiling_max": float(ceiling_values.max()),
+                "normalized_recovery_mean": float(recovery_values.mean()),
+                "normalized_recovery_median": float(
+                    np.median(recovery_values)
+                ),
+                "normalized_recovery_min": float(recovery_values.min()),
+                "normalized_recovery_max": float(recovery_values.max()),
+                "eligible_target_count_min_per_encoder": int(counts.min()),
+                "eligible_target_count_max_per_encoder": int(counts.max()),
+                "n_raw_cells": int(len(raw_values)),
+                "n_recovery_cells": int(len(recovery_values)),
+            }
+        )
+    return pd.DataFrame(rows).sort_values(keys).reset_index(drop=True)
+
+
+def _directional_nonmonotonicity_text(differences: pd.DataFrame) -> str:
+    if differences.empty or "target_block" not in differences:
+        return "No complete directional adjacent-depth diagnostic is available."
+    selected = differences[differences["target_block"].eq("directional")]
+    if selected.empty:
+        return "No complete directional adjacent-depth diagnostic is available."
+    clauses = []
+    signs = set()
+    for row in selected.sort_values("from_k").itertuples():
+        mean = _require_finite(row.mean, "directional adjacent-depth mean")
+        lower = _require_finite(row.lower, "directional adjacent-depth lower")
+        upper = _require_finite(row.upper, "directional adjacent-depth upper")
+        sign = "positive" if mean > 0.0 else "negative" if mean < 0.0 else "zero"
+        signs.add(sign)
+        interval = "excludes" if lower > 0.0 or upper < 0.0 else "includes"
+        clauses.append(
+            f"`{int(row.from_k)}→{int(row.to_k)}` has a {sign} point change "
+            f"of `{mean:.4f}` and its interval {interval} zero"
+        )
+    pattern = (
+        "The alternating point-estimate signs establish local non-monotonicity "
+        "in the inspected grid."
+        if "positive" in signs and "negative" in signs
+        else "The point-estimate signs do not establish local non-monotonicity."
+    )
+    return "; ".join(clauses) + f". {pattern}"
 
 
 def _whitening_nonmonotonicity_diagnostic(
@@ -323,6 +628,15 @@ def _parity_audit(
     gate_path = _find_ancestor_file(
         results_path, "REPRODUCTION_GATE_EXPERIMENT_01.json"
     )
+    if gate_path is None:
+        repository_gate = (
+            Path(__file__).resolve().parents[1]
+            / "docs"
+            / "experiment01"
+            / "REPRODUCTION_GATE_EXPERIMENT_01.json"
+        )
+        if repository_gate.is_file():
+            gate_path = repository_gate
     historical: Mapping[str, object]
     if gate_path is None:
         historical = {
@@ -385,24 +699,27 @@ def generate_phase1_report(
     results_path = Path(results_path)
     destination = Path(out_dir)
     destination.mkdir(parents=True, exist_ok=True)
-    previous_report_path = destination / "REPORT_EXPERIMENT_01.md"
-    current_report_sha256 = (
-        sha256_file(previous_report_path)
-        if previous_report_path.is_file()
-        else None
-    )
-    previous_manifest_path = destination / "report_manifest.json"
-    previous_manifest = (
-        json.loads(previous_manifest_path.read_text())
-        if previous_manifest_path.is_file()
-        else {}
-    )
-    previous_report_sha256 = previous_manifest.get(
-        "narrative_revision", {}
-    ).get("previous_report_sha256", current_report_sha256)
     summary_root = Path(summary_dir)
     summary_path = summary_root / "summary.json"
-    summary = json.loads(summary_path.read_text())
+    summary = _load_json_object(summary_path, label="Phase-I technical summary")
+    outcome = summary.get("directional_last_concat512_outcome")
+    if not isinstance(outcome, Mapping):
+        raise ValueError("Phase-I summary lacks the directional outcome record")
+    decisive_budgets = tuple(
+        _require_finite(value, "decisive budget")
+        for value in outcome.get("decisive_budgets", ())
+    )
+    adjacent_pairs = outcome.get("native_adjacent_robust_pairs", ())
+    low_budgets = sorted(
+        {
+            _require_finite(value, "low-budget grid value")
+            for pair in adjacent_pairs
+            for value in pair
+        }
+    )
+    if not low_budgets:
+        low_budgets = list(decisive_budgets)
+    later_phases = _later_phase_context(results_path)
     recovery = pd.read_parquet(summary_root / "block_recovery_points.parquet")
     raw = pd.read_parquet(summary_root / "raw_block_points.parquet")
     recovery_u = pd.read_parquet(summary_root / "recovery_uncertainty.parquet")
@@ -416,6 +733,7 @@ def generate_phase1_report(
         "target_name",
         "target_independent",
         "budget_kind",
+        "budget_days_per_stock",
         "budget_stock_day_equivalents",
         "n_rows_over_dim",
         "subsample_seed",
@@ -423,6 +741,9 @@ def generate_phase1_report(
         "whiten_k_requested",
         "reader_family",
         "alpha",
+        "lambda_absolute",
+        "test_r2",
+        "full_budget_test_r2",
         "normalized_recovery",
         "ceiling_eligible",
         "fit_status",
@@ -503,7 +824,7 @@ def generate_phase1_report(
         & gap["readout"].eq("last_concat512")
         & gap["reader_family"].eq("ridge_whiten_topk_tuned_alpha")
         & gap["feature_view"].eq("full_rank_whiten_topk")
-        & gap["budget_days_per_stock"].isin([0.125, 0.25, 0.5, 1, 2, 4])
+        & gap["budget_days_per_stock"].isin(low_budgets)
     ]
     fig, axis = plt.subplots(figsize=(7.4, 4.6))
     for budget, group in whiten_gap.groupby(
@@ -582,16 +903,8 @@ def generate_phase1_report(
         & results["fit_status"].eq("ok")
         & results["branch"].isin(["supervised", "jepa_horizon"])
     ]
-    figure_06_audit = {
-        "figure": "06_common_alpha_gap_surface.png",
-        "reader_family_filter": "ridge_raw_common_alpha",
-        "uses_common_alpha": True,
-        "uses_common_absolute_lambda": False,
-        "n_source_rows": len(surface),
-        "alpha_values": sorted(surface["alpha"].dropna().unique().tolist()),
-        "lambda_definition": "lambda = alpha * trace(covariance) / D",
-    }
-    atomic_write_json(destination / "06_common_alpha_audit.json", figure_06_audit)
+    surface_source_rows = len(surface)
+    source_families = sorted(surface["reader_family"].dropna().unique().tolist())
     surface = (
         surface.groupby(
             ["branch", "budget_stock_day_equivalents", "alpha"],
@@ -601,9 +914,41 @@ def generate_phase1_report(
         .unstack("branch")
         .reset_index()
     )
-    if {"supervised", "jepa_horizon"}.issubset(surface.columns):
-        surface["gap"] = surface["supervised"] - surface["jepa_horizon"]
-        pivot = surface.pivot(
+    required_surface_columns = {"supervised", "jepa_horizon"}
+    paired_surface = pd.DataFrame()
+    if required_surface_columns.issubset(surface.columns):
+        paired_surface = surface.dropna(
+            subset=["supervised", "jepa_horizon", "alpha"]
+        ).copy()
+    figure_06_generated = not paired_surface.empty
+    figure_06_uses_common_alpha = bool(
+        figure_06_generated
+        and source_families == ["ridge_raw_common_alpha"]
+        and paired_surface["alpha"].map(np.isfinite).all()
+    )
+    if figure_06_generated and not figure_06_uses_common_alpha:
+        raise ValueError("figure 06 source does not verify common-alpha parity")
+    figure_06_audit = {
+        "figure": "06_common_alpha_gap_surface.png",
+        "status": "generated" if figure_06_generated else "not_generated_no_pairs",
+        "reader_families_observed": source_families,
+        "uses_common_alpha": figure_06_uses_common_alpha,
+        "uses_common_absolute_lambda": False if figure_06_generated else None,
+        "n_source_rows": int(surface_source_rows),
+        "n_paired_surface_cells": int(len(paired_surface)),
+        "alpha_values": (
+            sorted(paired_surface["alpha"].dropna().unique().tolist())
+            if "alpha" in paired_surface
+            else []
+        ),
+        "lambda_definition": "lambda = alpha * trace(covariance) / D",
+    }
+    atomic_write_json(destination / "06_common_alpha_audit.json", figure_06_audit)
+    if figure_06_generated:
+        paired_surface["gap"] = (
+            paired_surface["supervised"] - paired_surface["jepa_horizon"]
+        )
+        pivot = paired_surface.pivot(
             index="alpha",
             columns="budget_stock_day_equivalents",
             values="gap",
@@ -666,7 +1011,7 @@ def generate_phase1_report(
         recovery["target_block"].eq("directional")
         & recovery["readout"].eq("last_concat512")
         & recovery["reader_family"].eq("ridge_raw_tuned_alpha")
-        & recovery["budget_days_per_stock"].isin([0.125, 0.25, 0.5, 1, 2, 4])
+        & recovery["budget_days_per_stock"].isin(low_budgets)
     ]
     fig, axis = plt.subplots(figsize=(8.0, 4.8))
     labels, data = [], []
@@ -833,15 +1178,18 @@ def generate_phase1_report(
 
     findings = _specificity_findings(raw_u, recovery_u)
     signatures = summary.get("target_block_gap_signatures", {})
-    directional_gap = _float_or_nan(
-        signatures["directional"]["low_budget_mean_normalized_gap"]
-    )
-    volatility_gap = _float_or_nan(
-        signatures["volatility"]["low_budget_mean_normalized_gap"]
-    )
-    timing_gap = _float_or_nan(
-        signatures["timing"]["low_budget_mean_normalized_gap"]
-    )
+    block_gaps: dict[str, float] = {}
+    for block in ("directional", "volatility", "timing"):
+        record = signatures.get(block) if isinstance(signatures, Mapping) else None
+        if not isinstance(record, Mapping):
+            block_gaps[block] = float("nan")
+            continue
+        block_gaps[block] = _float_or_nan(
+            record.get("low_budget_mean_normalized_gap")
+        )
+    directional_gap = block_gaps["directional"]
+    volatility_gap = block_gaps["volatility"]
+    timing_gap = block_gaps["timing"]
     specificity_ratios = {
         "directional_over_volatility": (
             directional_gap / volatility_gap
@@ -889,12 +1237,21 @@ def generate_phase1_report(
             "max_over_min_ratio": ratio,
             "approximately_matched_within_10pct": bool(ratio <= 1.10),
         }
+    last_scale_for_regularization = scale_audit.get("last_concat512", {})
+    trace_matched = bool(
+        last_scale_for_regularization.get(
+            "jepa_horizon_supervised_trace_matched_within_10pct", False
+        )
+    )
     regularization_audit = {
-        "trace_matched": False,
+        "trace_matched": trace_matched,
         "scientific_common_regularization_parameter": "alpha",
         "lambda_definition": "lambda = alpha * trace(covariance) / D",
-        "figure_06_reader_family": "ridge_raw_common_alpha",
-        "figure_06_uses_common_alpha": True,
+        "figure_06_status": figure_06_audit["status"],
+        "figure_06_reader_families_observed": figure_06_audit[
+            "reader_families_observed"
+        ],
+        "figure_06_uses_common_alpha": figure_06_audit["uses_common_alpha"],
         "figure_06_audit": "06_common_alpha_audit.json",
         "absolute_lambda_comparisons_in_report": False,
         "absolute_lambda_comparison_policy": (
@@ -929,10 +1286,9 @@ def generate_phase1_report(
             destination / "time_of_day_sensitivity_summary.parquet",
         )
 
-    outcome = summary["directional_last_concat512_outcome"]
     nonmonotonicity = _whitening_nonmonotonicity_diagnostic(
         recovery,
-        decisive_budgets=outcome.get("decisive_budgets", (0.125, 0.25)),
+        decisive_budgets=decisive_budgets,
         n_bootstrap=5000,
     )
     diagnostic_files = {
@@ -961,6 +1317,12 @@ def generate_phase1_report(
         nonmonotonicity_manifest,
     )
     parity = _parity_audit(results_path, raw_u)
+    pooling = _pooling_diagnostic(raw_u)
+    critical_metrics = _critical_budget_metrics(results, decisive_budgets)
+    if not critical_metrics.empty:
+        atomic_write_parquet(
+            critical_metrics, destination / "16_critical_budget_metrics.parquet"
+        )
 
     interval_table_rows = [
         {
@@ -993,16 +1355,15 @@ def generate_phase1_report(
             values="mean_normalized_gap",
         ).reset_index()
         for _, values in encoder_wide.iterrows():
-            encoder_table_rows.append(
-                {
-                    "target block": values["target_block"],
-                    "encoder seed": int(values["encoder_seed"]),
-                    "k=8": f"{values[8.0]:.4f}",
-                    "k=16": f"{values[16.0]:.4f}",
-                    "k=32": f"{values[32.0]:.4f}",
-                    "k=64": f"{values[64.0]:.4f}",
-                }
-            )
+            table_row = {
+                "target block": values["target_block"],
+                "encoder seed": int(values["encoder_seed"]),
+            }
+            for depth in nonmonotonicity["scope"]["whitening_depths"]:
+                table_row[f"k={int(depth)}"] = _format_optional(
+                    values.get(float(depth))
+                )
+            encoder_table_rows.append(table_row)
 
     historical = parity["historical_reproduction_gate"]
     historical_rows: list[dict[str, object]] = []
@@ -1053,10 +1414,24 @@ def generate_phase1_report(
             }
         )
 
-    ceiling = outcome["absolute_ceiling_gap"]
+    ceiling = outcome.get("absolute_ceiling_gap")
+    if not isinstance(ceiling, Mapping):
+        raise ValueError("Phase-I outcome lacks the absolute ceiling gap")
     ceiling_mean = _float_or_nan(ceiling.get("mean"))
     ceiling_lower = _float_or_nan(ceiling.get("lower"))
     ceiling_upper = _float_or_nan(ceiling.get("upper"))
+    ceiling_available = all(
+        np.isfinite(value)
+        for value in (ceiling_mean, ceiling_lower, ceiling_upper)
+    )
+    ceiling_excludes_zero = bool(
+        ceiling_available and (ceiling_lower > 0.0 or ceiling_upper < 0.0)
+    )
+    ceiling_robust = bool(ceiling.get("robust"))
+    if ceiling_available and ceiling_robust != ceiling_excludes_zero:
+        raise ValueError(
+            "ceiling robust flag is inconsistent with its reported interval"
+        )
     outcome_reason = str(outcome["reason"])
     narrative_outcome_reason = outcome_reason[:1].upper() + outcome_reason[1:]
     k_50gap = outcome.get("k_50gap")
@@ -1065,10 +1440,10 @@ def generate_phase1_report(
         candidate["k"]: candidate
         for candidate in outcome.get("whitening_candidates", [])
     }
-    k_50_reduction = float(
-        whitening_by_k.get(k_50gap, {}).get("reduction_fraction", np.nan)
+    k_50_reduction = _float_or_nan(
+        whitening_by_k.get(k_50gap, {}).get("reduction_fraction")
     )
-    decisive_gap = float(outcome.get("native_low_budget_mean_gap", np.nan))
+    decisive_gap = _float_or_nan(outcome.get("native_low_budget_mean_gap"))
     last_scale = scale_audit.get("last_concat512", {})
     last_trace_by_branch = last_scale.get("trace_cov_over_dim_by_branch", {})
     last_horizon_trace = _float_or_nan(
@@ -1081,25 +1456,44 @@ def generate_phase1_report(
         last_scale.get("jepa_horizon_over_supervised_ratio")
     )
     last_max_min_ratio = _float_or_nan(last_scale.get("max_over_min_ratio"))
+    scale_available = all(
+        np.isfinite(value)
+        for value in (
+            last_horizon_trace,
+            last_supervised_trace,
+            last_horizon_supervised_ratio,
+            last_max_min_ratio,
+        )
+    )
     specificity_table = _markdown_table(
         [
             {
                 "target block": "directional",
-                "mean normalized finite-sample gap": f"{directional_gap:.4f}",
+                "mean normalized finite-sample gap": _format_optional(
+                    directional_gap
+                ),
                 "directional / control": "—",
             },
             {
                 "target block": "volatility",
-                "mean normalized finite-sample gap": f"{volatility_gap:.4f}",
+                "mean normalized finite-sample gap": _format_optional(
+                    volatility_gap
+                ),
                 "directional / control": (
-                    f"{specificity_ratios['directional_over_volatility']:.2f}×"
+                    f"{_format_optional(specificity_ratios['directional_over_volatility'], 2)}×"
+                    if np.isfinite(
+                        specificity_ratios["directional_over_volatility"]
+                    )
+                    else "n/a"
                 ),
             },
             {
                 "target block": "timing",
-                "mean normalized finite-sample gap": f"{timing_gap:.4f}",
+                "mean normalized finite-sample gap": _format_optional(timing_gap),
                 "directional / control": (
-                    f"{specificity_ratios['directional_over_timing']:.2f}×"
+                    f"{_format_optional(specificity_ratios['directional_over_timing'], 2)}×"
+                    if np.isfinite(specificity_ratios["directional_over_timing"])
+                    else "n/a"
                 ),
             },
         ],
@@ -1129,9 +1523,16 @@ def generate_phase1_report(
             "excludes zero",
         ],
     )
+    diagnostic_depths = tuple(
+        int(value) for value in nonmonotonicity["scope"]["whitening_depths"]
+    )
     encoder_table = _markdown_table(
         encoder_table_rows,
-        ["target block", "encoder seed", "k=8", "k=16", "k=32", "k=64"],
+        [
+            "target block",
+            "encoder seed",
+            *(f"k={value}" for value in diagnostic_depths),
+        ],
     )
     historical_table = _markdown_table(
         historical_rows,
@@ -1156,10 +1557,149 @@ def generate_phase1_report(
         if row.target_block == "directional"
     )
 
+    critical_table_rows = [
+        {
+            "block": row.target_block,
+            "budget": _format_budget(row.budget_days_per_stock),
+            "branch": row.branch,
+            "raw R² mean / median": (
+                f"{row.raw_test_r2_mean:.4f} / {row.raw_test_r2_median:.4f}"
+            ),
+            "ceiling mean [range]": (
+                f"{row.full_budget_ceiling_mean:.4f} "
+                f"[{row.full_budget_ceiling_min:.4f}, "
+                f"{row.full_budget_ceiling_max:.4f}]"
+            ),
+            "recovery mean / median [range]": (
+                f"{row.normalized_recovery_mean:.4f} / "
+                f"{row.normalized_recovery_median:.4f} "
+                f"[{row.normalized_recovery_min:.4f}, "
+                f"{row.normalized_recovery_max:.4f}]"
+            ),
+            "eligible targets min–max": (
+                f"{int(row.eligible_target_count_min_per_encoder)}–"
+                f"{int(row.eligible_target_count_max_per_encoder)}"
+            ),
+            "negative raw fraction": f"{row.negative_raw_test_r2_fraction:.3f}",
+        }
+        for row in critical_metrics.itertuples()
+    ]
+    critical_table = _markdown_table(
+        critical_table_rows,
+        [
+            "block",
+            "budget",
+            "branch",
+            "raw R² mean / median",
+            "ceiling mean [range]",
+            "recovery mean / median [range]",
+            "eligible targets min–max",
+            "negative raw fraction",
+        ],
+    )
+
+    spectral = later_phases["spectral"]
+    if spectral.get("available"):
+        spectral_k = int(spectral["k"])
+        horizon_mass = spectral["jepa_horizon"]["predictive_mass"]
+        supervised_mass = spectral["supervised"]["predictive_mass"]
+        horizon_haar = spectral["jepa_horizon"]["haar"]
+        supervised_haar = spectral["supervised"]["haar"]
+        spectral_summary_text = (
+            f"Phase II places only `{horizon_mass['mean']:.6f}` of horizon-JEPA's "
+            f"directional predictive mass in its first {spectral_k} PCs, versus "
+            f"`{supervised_mass['mean']:.6f}` for supervised. The fraction of "
+            f"Haar draws beating top-PCA averages `{horizon_haar['empirical_p_mean']:.3f}` "
+            f"for horizon-JEPA and `{supervised_haar['empirical_p_mean']:.3f}` for "
+            "supervised across the recorded encoder seeds."
+        )
+    else:
+        spectral_summary_text = (
+            "No Phase-II machine summary is present beside these Phase-I artifacts, "
+            "so this report makes no numerical spectral claim."
+        )
+
+    if pooling.get("available"):
+        horizon_pool = pooling["values"]["jepa_horizon"]
+        supervised_pool = pooling["values"]["supervised"]
+        pooling_summary_text = (
+            "At full budget, changing `last_concat512 → meanK_concatS` changes "
+            f"directional test R² from `{horizon_pool['last_concat512']:.6f}` to "
+            f"`{horizon_pool['meanK_concatS']:.6f}` for horizon-JEPA and from "
+            f"`{supervised_pool['last_concat512']:.6f}` to "
+            f"`{supervised_pool['meanK_concatS']:.6f}` for supervised."
+        )
+    else:
+        pooling_summary_text = (
+            "The complete matched last/meanK pooling cells are unavailable in the "
+            "supplied Phase-I summary, so no pooling contrast is asserted."
+        )
+
+    finite_ratios = [
+        specificity_ratios["directional_over_volatility"],
+        specificity_ratios["directional_over_timing"],
+    ]
+    if all(np.isfinite(value) for value in finite_ratios):
+        specificity_ratio_text = (
+            f"The descriptive directional/control ratios are `{finite_ratios[0]:.2f}×` "
+            f"and `{finite_ratios[1]:.2f}×`. They are point summaries, not an "
+            "independence-adjusted specificity test."
+        )
+    else:
+        specificity_ratio_text = (
+            "One or both control-block ratios are unavailable and no ratio claim is made."
+        )
+
+    if k_50gap is not None and k_nonrobust is not None:
+        if not np.isfinite(k_50_reduction):
+            raise ValueError("k_50gap has no matching whitening candidate")
+        maximum_tested_k = max(int(value) for value in whitening_by_k)
+        whitening_summary_text = (
+            f"At `k_50gap={int(k_50gap)}`, whitening reduces the decisive-budget "
+            f"gap by `{k_50_reduction:.1%}` but does not eliminate it. "
+            f"Non-robustness first appears at `k_nonrobust={int(k_nonrobust)}`; "
+            + (
+                "this is the maximum tested valid whitening depth. "
+                if int(k_nonrobust) == maximum_tested_k
+                else "this is below the maximum tested valid whitening depth. "
+            )
+            + "This pattern does not support concentration in only a few leading PCs."
+        )
+    else:
+        whitening_summary_text = (
+            "The frozen outcome has no finite whitening transition, so no whitening-"
+            "depth claim is made."
+        )
+
+    historical_status_text = (
+        "The historical reproduction gate is available and passed."
+        if historical.get("available") and historical.get("passed")
+        else "The historical reproduction gate is not available in this report context."
+    )
+    later_phase_status_text = (
+        f"Phase II status: `{later_phases['phase2']['status']}`; Phase III-R status: "
+        f"`{later_phases['phase3_r']['status']}`. These later diagnostics do not "
+        "change the frozen Phase-I outcome."
+    )
+    nonmonotonicity_text = _directional_nonmonotonicity_text(
+        nonmonotonicity["paired_differences"]
+    )
+    fractional_n_over_d = results[
+        results["budget_kind"].eq("fractional")
+        & results["readout"].eq("last_concat512")
+        & results["feature_view"].eq("full_rank_raw")
+        & results["reader_family"].eq("ridge_raw_tuned_alpha")
+    ]["n_rows_over_dim"]
+    min_fractional_n_over_d = (
+        _require_finite(fractional_n_over_d.min(), "minimum fractional n/D")
+        if not fractional_n_over_d.empty
+        else float("nan")
+    )
+
     primary_result = {
-        "name": "directional_specificity_across_three_distinct_diagnostics",
-        "spectral_anti_alignment_established": True,
-        "last_to_meanK_directional_fragility_established": True,
+        "name": "frozen_phase1_outcome_with_separate_scientific_diagnostics",
+        "spectral_diagnostic": spectral,
+        "pooling_diagnostic": pooling,
         "phase1_normalized_finite_sample_gap": {
             "directional": directional_gap,
             "volatility": volatility_gap,
@@ -1167,128 +1707,200 @@ def generate_phase1_report(
             **specificity_ratios,
         },
     }
+
+    adjacent_pair_text = ", ".join(
+        f"`{_format_budget(left)}→{_format_budget(right)}`"
+        for left, right in adjacent_pairs
+    )
+    trace_match_text = (
+        "matched within the report's 10% diagnostic tolerance"
+        if last_scale.get("jepa_horizon_supervised_trace_matched_within_10pct")
+        else "not matched within the report's 10% diagnostic tolerance"
+    )
+    if figure_06_audit["status"] == "generated":
+        figure_06_text = (
+            "Figure 06 passed its source audit: every plotted cell comes from "
+            "`ridge_raw_common_alpha`, and its axis is dimensionless alpha rather "
+            "than absolute lambda."
+        )
+    else:
+        figure_06_text = (
+            "Figure 06 was not generated because no complete paired common-alpha "
+            "surface was available; no regularization-parity claim is made from it."
+        )
+    n_over_d_text = (
+        f"The smallest observed fractional-budget `n/D` is "
+        f"`{min_fractional_n_over_d:.3f}`, so the original grid does not enter "
+        "the `n/D < 1` regime."
+        if np.isfinite(min_fractional_n_over_d)
+        else "No fractional-budget `n/D` value is available in these artifacts."
+    )
+    decisive_budget_text = (
+        _format_budget_list(decisive_budgets)
+        if decisive_budgets
+        else "`none recorded`"
+    )
+    if ceiling_available:
+        ceiling_summary_text = (
+            f"The supervised-minus-horizon operational ceiling gap is "
+            f"`{ceiling_mean:.6f}` with computational-robustness interval "
+            f"`[{ceiling_lower:.6f}, {ceiling_upper:.6f}]`. "
+            f"{_interval_zero_statement(ceiling_lower, ceiling_upper)}"
+        )
+    else:
+        ceiling_summary_text = (
+            "A two-branch operational ceiling gap is unavailable in these artifacts, "
+            "so no ceiling-gap claim is made."
+        )
+    if np.isfinite(directional_gap):
+        recovery_summary_text = (
+            f"The mean normalized directional gap over the frozen low-budget grid "
+            f"is `{directional_gap:.6f}`; over the recorded decisive budgets "
+            f"{decisive_budget_text} it is `{_format_optional(decisive_gap, 6)}`."
+        )
+    else:
+        recovery_summary_text = (
+            "A two-branch normalized directional gap is unavailable in these "
+            "artifacts, so no recovery-gap claim is made."
+        )
+    if scale_available:
+        trace_summary_text = (
+            f"On `last_concat512`, mean `trace_cov_over_dim` is "
+            f"`{last_horizon_trace:.6f}` for horizon-JEPA and "
+            f"`{last_supervised_trace:.6f}` for supervised, a ratio of "
+            f"`{last_horizon_supervised_ratio:.6f}`. The two traces are "
+            f"{trace_match_text}. The all-branch max/min ratio is "
+            f"`{last_max_min_ratio:.6f}`."
+        )
+    else:
+        trace_summary_text = (
+            "The report inputs do not contain both horizon-JEPA and supervised "
+            "trace-scale cells, so no covariance-scale parity claim is made."
+        )
+
     narrative_summary = f"""# Narrative summary — Experiment 01 Phase I
 
-## Primary result: directional specificity across distinct diagnostics
+## Primary scientific result: specificity across three diagnostics
 
-Three separate diagnostics point to a direction-specific accessibility
-penalty. First, the previously established spectral diagnostic shows
-directional variance–task anti-alignment: at `m/D=1/32`, horizon-JEPA recovers
-`0.0050` against a `0.0563` random-subspace null, whereas supervised recovers
-`0.8971` against `0.6118`. Second, the previously established `last → meanK`
-diagnostic shows directional pooling fragility; the production linear
-full-budget check has horizon-JEPA `0.2199 → 0.0701`, while supervised is
-approximately stable (`0.3853 → 0.3941`). Third, Phase I measures the normalized
-finite-sample gap as `0.5460` for direction, `0.1838` for volatility and
-`0.1528` for timing. The directional penalty is therefore approximately
-`3–3.5×` larger than the controls (exact ratios `2.97×` and `3.57×`).
+Conditional on the frozen representations and a newly fitted linear reader,
+the supervised representation is more accessible at low reader-label budgets.
+This is not an end-to-end label-efficiency claim because the supervised encoder
+was itself trained with directional and volatility labels.
+
+{spectral_summary_text}
+
+{pooling_summary_text}
+
+The Phase-I normalized finite-sample gaps are `{_format_optional(directional_gap, 6)}` for
+direction, `{_format_optional(volatility_gap, 6)}` for volatility and
+`{_format_optional(timing_gap, 6)}` for timing. {specificity_ratio_text}
 
 ## Separate Phase-I effects
 
-- The operational linear ceiling gap is robust: supervised minus horizon-JEPA
-  is `{ceiling_mean:.4f}` with hierarchical 95% interval
-  `[{ceiling_lower:.4f}, {ceiling_upper:.4f}]`.
-- The normalized recovery gap is independently robust at adjacent low budgets;
-  its six-low-budget mean is `{directional_gap:.4f}`.
-- Whitening mediates the second component: `k_50gap={k_50gap}` halves but does
-  not eliminate the gap, while non-robustness appears only at
-  `k_nonrobust={k_nonrobust}`,
-  i.e. near-complete whitening. These results do not support concentration of
-  the problem in a few leading PCs.
+- {ceiling_summary_text}
+- {recovery_summary_text}
+- {whitening_summary_text}
 
-## Secondary technical classification
+## Secondary frozen technical classification
 
-The unchanged preregistered classification is **{outcome['outcome']} with a robust ceiling gap**.
-`B` is not a coexisting outcome. The local
-non-monotonicity diagnostic at `k=8,16,32,64` is post hoc and does not alter
-this technical classification.
+The preregistered Phase-I classification remains **{outcome['outcome']}**.
+Nothing in this narrative revision changes its thresholds, result rows or
+decision rule. The separate operational ceiling fact is reported as
+**{outcome['outcome']} with a robust ceiling gap**; `B` is not treated as a
+coexisting outcome.
 
 ## Parity and scope
 
-The historical reproduction gate passed (`0.211129` versus `0.2111` for
-horizon-JEPA; `0.375636` versus `0.3756` for supervised). Production
-full-budget scores and new-test min-norm OLS are reported separately because
-the new chronological test split is not required to equal the old validation
-split. Phase II and Phase III were not run.
+{historical_status_text} Production full-budget scores and new-test min-norm
+OLS remain separate because the new chronological test half is not required to
+equal the old validation split. {later_phase_status_text}
 """
-    (destination / "SUMMARY_NARRATIVE_EXPERIMENT_01.md").write_text(
-        narrative_summary, encoding="utf-8"
+    atomic_write_text(
+        destination / "SUMMARY_NARRATIVE_EXPERIMENT_01.md", narrative_summary
     )
 
     report = f"""# Report — Experiment 01 Phase I
 
-## Primary result: directional specificity across three distinct diagnostics
+## Primary scientific result: specificity across three diagnostics
 
-The primary result is not the taxonomy label. It is the convergence of three
-distinct specificity diagnostics:
+The Phase-I result supports the following restricted statement: conditional on
+the frozen representations and a newly fitted reader, the supervised
+representation is more accessible at low reader-label budgets. It does not
+establish that supervised pretraining is intrinsically more label-efficient
+end to end, because the supervised encoder saw directional and volatility
+labels during pretraining.
 
-1. **Established directional spectral anti-alignment.** At `m/D=1/32`, the
-   horizon-JEPA final readout recovers `0.0050` of its full linear directional
-   score, below the `0.0563` empirical random-subspace null. Supervised recovers
-   `0.8971`, compared with its `0.6118` null. This establishes variance–task
-   anti-alignment rather than a generic absence of predictive content.
-2. **Established directional pooling fragility.** Under `last → meanK`, the
-   production full-budget linear directional R² changes from `0.2199` to
-   `0.0701` for horizon-JEPA, while supervised remains approximately stable
-   (`0.3853 → 0.3941`). This is a readout interaction, not a second A/B/D
-   outcome.
-3. **Phase-I finite-sample specificity.** The mean normalized gaps are:
+### Directional spectral organization
+
+{spectral_summary_text}
+
+When present, these values come from the completed Phase-II machine summary,
+not from literals copied from the older post-P0 PCA ladder. They are diagnostic
+evidence and do not alter Phase I.
+
+### Pooling interaction
+
+{pooling_summary_text}
+
+This matched readout contrast is reported as an interaction with pooling, not
+as an additional A/B/D outcome.
+
+### Finite-sample specificity
+
+The normalized-gap point summaries are:
 
 {specificity_table}
 
-The directional penalty is therefore approximately **3–3.5 times larger**
-than the controls (exact ratios `2.97×` versus volatility and `3.57×` versus
-timing). Volatility and timing remain specificity controls and are not pooled
-into the directional result.
+{specificity_ratio_text} Volatility and timing remain separate controls. These
+ratios alone do not establish an interaction because target families are
+correlated and grouped stock-day uncertainty has not yet been computed.
 
-## Three effects that must remain separate
+## Phase-I effects kept separate
 
-### Robust operational linear ceiling gap
+### Operational linear ceiling gap
 
-At full production budget with tuned raw ridge, the supervised minus
-horizon-JEPA directional R² gap is `{ceiling_mean:.6f}`, with hierarchical
-95% interval `[{ceiling_lower:.6f}, {ceiling_upper:.6f}]`. The interval
-excludes zero. This is a robust operational linear ceiling gap; it is not, by
-itself, a normalized sample-efficiency statement.
+{ceiling_summary_text} When available, this is an operational linear ceiling
+statement, not a normalized sample-efficiency statement.
 
-### Robust normalized-recovery gap
+### Normalized-recovery gap
 
-After target-wise normalization by each representation's eligible operational
-ceiling, the directional finite-sample gap remains robust across adjacent low
-budgets. The mean over all six preregistered low budgets is
-`{directional_gap:.6f}`; the mean over the decisive `0.125` and `0.25`
-days/stock cells is `{decisive_gap:.6f}`.
+Recovery is normalized target-wise by each representation's eligible
+operational ceiling. {recovery_summary_text} The frozen summary records the adjacent robust pairs as
+{adjacent_pair_text or '`none`'}.
 
 ### Mediation by progressive whitening
 
-The unchanged technical thresholds are `k_50gap = {k_50gap}` and
-`k_nonrobust = {k_nonrobust}`. Partial whitening at `k=128` reduces
-the decisive-budget normalized gap by `{k_50_reduction:.1%}` but does not
-eliminate it: the gap remains robust. Non-robustness requires `k=508`, i.e.
-near-complete whitening of a 512-dimensional readout. The evidence therefore
-does **not** justify saying that the problem is concentrated in a few leading
-principal components.
+{whitening_summary_text}
 
-## Secondary technical classification
+## Secondary frozen preregistered classification
 
-The preregistered taxonomy is retained unchanged as a secondary technical
-classification: **{outcome['outcome']} with a robust ceiling gap**.
+The frozen Phase-I technical classification is **{outcome['outcome']}**.
+Technical rule satisfied: {narrative_outcome_reason}. The result rows,
+thresholds and classification logic have not been modified. The operational
+ceiling result is stated separately as **{outcome['outcome']} with a robust
+ceiling gap**; `B` is not a coexisting outcome.
 
-Technical rule satisfied: {narrative_outcome_reason}. The robust ceiling gap
-above is reported alongside A1; `B` is not described as a coexisting outcome.
-
-The complete unchanged machine-readable classification record remains in
-`summary/summary.json` and is reproduced here for auditability:
+The complete machine-readable record is reproduced for auditability:
 
 ```json
 {json.dumps(outcome, indent=2, sort_keys=True)}
 ```
 
+## Raw and normalized metrics at decisive budgets
+
+The table co-reports raw test R², operational ceiling and normalized recovery.
+Ranges are over the eligible target/encoder/subsample cells represented in the
+frozen result table; they are not population intervals.
+
+{critical_table}
+
+The machine-readable version is `16_critical_budget_metrics.parquet`.
+
 ## Whitening-depth non-monotonicity diagnostic
 
 This added diagnostic uses only frozen Phase-I recovery points. Within each
 encoder/subsample cell, it first averages the paired supervised–horizon gap
-over the two decisive budgets (`0.125`, `0.25`), then applies 5,000-draw
+over the decisive budgets ({decisive_budget_text}), then applies 5,000-draw
 hierarchical resampling of encoder seeds followed by paired cells within
 encoder. It does not refit a reader and is not outcome-defining.
 
@@ -1306,34 +1918,20 @@ Differences are `gap(to k) − gap(from k)`, paired by encoder seed and subsampl
 
 {encoder_table}
 
-For direction, `8→16` is indistinguishable from zero, `16→32` shows a small
-positive paired change, and `32→64` a larger negative paired change; the latter
-two intervals exclude zero. Volatility and timing show different local
-patterns. This verifies local non-monotonicity in the inspected cells, but the
-diagnostic is post hoc and does not modify the preregistered interpretation or
-support a “few-PC” account. Full paired values per encoder are retained in the
-four `15_whitening_nonmonotonicity_*` artifacts.
+{nonmonotonicity_text} This diagnostic is post hoc and does not modify the
+preregistered interpretation. Full paired values per encoder are retained in
+the `15_whitening_nonmonotonicity_*` artifacts.
 
 ## Global covariance scale and regularization parity
 
-`trace_cov_over_dim` is **not matched**. On `last_concat512`, the mean trace
-scale is `{last_horizon_trace:.6f}`
-for horizon-JEPA and
-`{last_supervised_trace:.6f}`
-for supervised, a horizon/supervised ratio of
-`{last_horizon_supervised_ratio:.3f}`
-(approximately `1.40`). The all-branch max/min ratio is
-`{last_max_min_ratio:.3f}` because masked-JEPA
-has a still larger trace.
+{trace_summary_text}
 
 Scientific common-regularization comparisons use the dimensionless parameter
 
 `lambda = alpha * trace(covariance) / D`.
 
-Figure 06 is verified to select `reader_family = ridge_raw_common_alpha` and
-therefore compares **common alpha**, not common absolute lambda. No
-fixed-absolute-lambda comparison is included in this report; with unmatched
-trace scale, such a comparison would be marked confounded.
+{figure_06_text} No fixed-absolute-lambda comparison is included; when trace
+scales differ, such a comparison is confounded.
 
 ```json
 {json.dumps(scale_audit, indent=2, sort_keys=True)}
@@ -1347,8 +1945,7 @@ This is the mandatory old-split min-norm OLS reproduction check:
 
 {historical_table}
 
-The observed values reproduce the historical rounded references within the
-frozen tolerance.
+{historical_status_text}
 
 ### Production full-budget test
 
@@ -1371,6 +1968,22 @@ two chronological halves of the former held-out stock-days.
 - directional, volatility and timing are summarized separately;
 - normalized recovery is target-wise and only uses full-budget R² at least 0.01.
 
+{n_over_d_text}
+
+## External-validity limits
+
+- The dataset contains seven stocks from one market/domain.
+- The historical split is stock-day-group-disjoint but not globally
+  chronological; the same calendar date may occur on different split sides for
+  different stocks.
+- Validation and test are chronological halves of a historically explored
+  held-out set, so the new test is not a pristine external confirmation set.
+- Fractional budgets vary within-day endpoint coverage while retaining seven
+  stock-day groups.
+- Supervised pretraining used directional and volatility labels later probed by
+  Experiment 01; timing was not a direct training target but may be correlated
+  with those labels.
+
 ## Specificity and time-of-day controls
 
 ```json
@@ -1384,7 +1997,9 @@ These sensitivity cells are not pooled into the random-anchor curves.
 ## Uncertainty
 
 Intervals use hierarchical resampling of encoder seeds followed by subsampling
-seeds within encoder. Companion Parquet tables expose
+seeds within encoder. They are **computational-robustness intervals**, not
+population-generalization confidence intervals. Grouped stock/day uncertainty
+and leave-one-stock-out sensitivity remain pending. Companion tables expose
 `sd_subsample_within_encoder` and `sd_encoder_between_means`; all
 encoder-specific curves are retained in figure 10.
 
@@ -1393,60 +2008,217 @@ encoder-specific curves are retained in figure 10.
 {chr(10).join(f'- `{name}`' for name in figure_paths)}
 - `06_common_alpha_audit.json`
 - `15_whitening_nonmonotonicity_manifest.json`
+- `16_critical_budget_metrics.parquet`
 {chr(10).join(f'- `{name}`' for name in diagnostic_files.values())}
 
-Phase II (PCA/random subspaces) and Phase III (MLP) were not run. This revision
-changes narrative ordering and adds read-only diagnostics only; it does not
-change Phase-I results, thresholds, the technical outcome, or the fit pipeline.
+{later_phase_status_text} This revision changes narrative and read-only report
+diagnostics only; it does not change Phase-I results, thresholds, the technical
+outcome or the fit pipeline.
 """
-    (destination / "REPORT_EXPERIMENT_01.md").write_text(report, encoding="utf-8")
+    atomic_write_text(destination / "REPORT_EXPERIMENT_01.md", report)
+
+    repository_root = Path(__file__).resolve().parents[1]
+
+    def portable_source_path(path: Path | str) -> str:
+        candidate = Path(path)
+        try:
+            return str(candidate.resolve().relative_to(repository_root.resolve()))
+        except ValueError:
+            return candidate.name
+
+    def portable_payload(value: object) -> object:
+        if isinstance(value, Mapping):
+            return {str(key): portable_payload(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [portable_payload(item) for item in value]
+        if isinstance(value, tuple):
+            return [portable_payload(item) for item in value]
+        if isinstance(value, str) and Path(value).is_absolute():
+            return portable_source_path(value)
+        return value
 
     protected_inputs = {
         "phase1_results": {
-            "path": str(results_path),
+            "path": portable_source_path(results_path),
             "sha256": sha256_file(results_path),
         },
         "technical_summary": {
-            "path": str(summary_path),
+            "path": portable_source_path(summary_path),
             "sha256": sha256_file(summary_path),
         },
     }
+    if spectral.get("available"):
+        protected_inputs["phase2_summary"] = {
+            "path": portable_source_path(str(spectral["source_path"])),
+            "sha256": spectral["source_sha256"],
+        }
+    if later_phases["phase3_r"]["status"] == "complete":
+        protected_inputs["phase3_r_summary"] = {
+            "path": portable_source_path(
+                str(later_phases["phase3_r"]["summary_path"])
+            ),
+            "sha256": later_phases["phase3_r"]["summary_sha256"],
+        }
+
+    claim_rows: list[dict[str, object]] = []
+
+    def add_claim(
+        claim_id: str,
+        phase: str,
+        metric: str,
+        value: object,
+        source_path: Path,
+        source_columns: str,
+        filter_text: str,
+        aggregation: str,
+        report_locations: str,
+    ) -> None:
+        claim_rows.append(
+            {
+                "claim_id": claim_id,
+                "phase": phase,
+                "metric": metric,
+                "value_json": json.dumps(value, sort_keys=True),
+                "source_artifact": portable_source_path(source_path),
+                "source_columns": source_columns,
+                "filter": filter_text,
+                "aggregation": aggregation,
+                "artifact_sha256": sha256_file(source_path),
+                "report_locations": report_locations,
+            }
+        )
+
+    add_claim(
+        "phase1.technical_outcome",
+        "I",
+        "A1/A2/B/D classification",
+        outcome["outcome"],
+        summary_path,
+        "directional_last_concat512_outcome.outcome",
+        "directional/last_concat512",
+        "frozen preregistered rule",
+        "summary; report/frozen preregistered outcome",
+    )
+    if ceiling_available:
+        add_claim(
+            "phase1.ceiling_gap",
+            "I",
+            "supervised_minus_horizon_full_budget_raw_r2",
+            {"mean": ceiling_mean, "lower": ceiling_lower, "upper": ceiling_upper},
+            summary_path,
+            "directional_last_concat512_outcome.absolute_ceiling_gap",
+            "directional/last_concat512/full_train/ridge_raw_tuned_alpha",
+            "hierarchical encoder/subsample interval",
+            "summary; report/operational linear ceiling gap",
+        )
+    for block, value in block_gaps.items():
+        if np.isfinite(value):
+            add_claim(
+                f"phase1.normalized_gap.{block}",
+                "I",
+                "low_budget_mean_normalized_gap",
+                value,
+                summary_path,
+                f"target_block_gap_signatures.{block}.low_budget_mean_normalized_gap",
+                f"{block}/last_concat512/ridge_raw_tuned_alpha",
+                "mean over frozen low-budget grid",
+                "summary; report/finite-sample specificity",
+            )
+    if pooling.get("available"):
+        raw_uncertainty_path = summary_root / "raw_uncertainty.parquet"
+        for branch, values in pooling["values"].items():
+            for readout, value in values.items():
+                add_claim(
+                    f"phase1.pooling.{branch}.{readout}",
+                    "I",
+                    "full_budget_directional_test_r2",
+                    value,
+                    raw_uncertainty_path,
+                    "raw_r2_mean",
+                    (
+                        f"branch={branch};readout={readout};directional;full_train;"
+                        "ridge_raw_tuned_alpha;full_rank_raw"
+                    ),
+                    "hierarchical point mean",
+                    "summary; report/pooling interaction",
+                )
+    if spectral.get("available"):
+        phase2_source = Path(str(spectral["source_path"]))
+        for branch in ("jepa_horizon", "supervised"):
+            add_claim(
+                f"phase2.predictive_mass.{branch}.top{spectral['k']}",
+                "II",
+                "cumulative_directional_predictive_mass",
+                spectral[branch]["predictive_mass"],
+                phase2_source,
+                "findings.directional_last_cumulative_mass",
+                f"branch={branch};k={spectral['k']};last_concat512;directional",
+                "hierarchical mean and interval",
+                "summary; report/directional spectral organization",
+            )
+            add_claim(
+                f"phase2.haar.{branch}.top{spectral['k']}",
+                "II",
+                "empirical_p_random_exceeds_top",
+                spectral[branch]["haar"],
+                phase2_source,
+                "findings.directional_last_top_pca_haar",
+                f"branch={branch};k={spectral['k']};last_concat512;directional",
+                "mean and range over encoder seeds",
+                "summary; report/directional spectral organization",
+            )
+    claim_table = pd.DataFrame(claim_rows)
+    atomic_write_parquet(claim_table, destination / "17_claim_table.parquet")
+
     changelog = f"""# Changelog — Experiment 01 Phase I narrative revision
 
-Date: 2026-07-31.
+Revision date: 2026-08-25.
 
 ## Narrative changes
 
-- Replaced prior report SHA-256: `{previous_report_sha256 or 'not present'}`.
-- Moved `{outcome['outcome']}` from the report headline to a secondary technical
-  classification; its value and preregistered rule are unchanged.
-- Reframed the primary result around three distinct specificity diagnostics:
-  established spectral anti-alignment, established `last → meanK` fragility,
-  and Phase-I normalized finite-sample gaps across target blocks.
+- Superseded the earlier narrative artifact; its exact identity remains in
+  version-control history rather than in this deterministically regenerated
+  report bundle.
+- Restored `{outcome['outcome']}` as the explicit frozen preregistered technical
+  classification while separating it from the scientific interpretation.
+- Removed copied PCA/null, pooling, gap, ratio, budget, whitening-depth and
+  execution-status literals. Narrative values now come from hashed inputs.
+- Replaced the older PCA-ladder literals with the detected completed Phase-II
+  summary and marked that evidence as later diagnostic context.
 - Separated the robust `{ceiling_mean:.6f}` operational ceiling gap, robust
   normalized-recovery gap, and whitening mediation.
-- Corrected whitening language: `k_50gap={k_50gap}` halves but does not
-  eliminate the gap; `k_nonrobust={k_nonrobust}` is near-complete whitening;
-  no few-PC concentration is
-  claimed.
+- Whitening wording is generated from the frozen candidates:
+  `k_50gap={k_50gap}`, `k_nonrobust={k_nonrobust}` and reduction
+  `{_format_optional(k_50_reduction, 6)}`; no few-PC concentration is claimed.
 - Replaced any possible “coexisting B” reading with “A1 with a robust ceiling
   gap.”
+- Added the supervised-pretraining-label limitation and restricted the reader
+  result to frozen-representation accessibility.
 
 ## Added read-only diagnostics
 
 - Added hierarchical intervals and paired adjacent-depth differences for
-  `k=8,16,32,64`, plus results by encoder seed and target block. The diagnostic
+  {_format_budget_list(diagnostic_depths)}, plus results by encoder seed and target block. The diagnostic
   reads frozen recovery points only and is explicitly post hoc.
-- Diagnostic row counts: 12 depth intervals, 9 hierarchical paired
-  differences, 36 depth-by-encoder rows and 27 paired-difference-by-encoder
+- Diagnostic row counts: {len(nonmonotonicity['intervals'])} depth intervals,
+  {len(nonmonotonicity['paired_differences'])} hierarchical paired differences,
+  {len(nonmonotonicity['per_encoder'])} depth-by-encoder rows and
+  {len(nonmonotonicity['paired_differences_per_encoder'])} paired-difference-by-encoder
   rows. Directional paired results (`to−from`) are:
   `{directional_difference_text}`.
-- Added the trace-scale audit (`last` horizon/supervised ≈ `1.40`), the exact
+- Added the trace-scale audit (observed `last` horizon/supervised ratio
+  `{last_horizon_supervised_ratio:.6f}`), the exact
   regularization formula, and an explicit verification that figure 06 uses
-  `ridge_raw_common_alpha`. Fixed-absolute-lambda comparisons are absent.
+  common alpha when generated. Fixed-absolute-lambda comparisons are absent.
 - Added historical reproduction parity, production full-budget test results,
   and new-test min-norm OLS as a separate diagnostic with no old/new split
   equality requirement.
+- Added raw/normalized decisive-budget table and a hashed claim table.
+- Corrected uncertainty language: existing intervals are computational
+  robustness intervals; grouped stock/day uncertainty is pending.
+- Replaced stale Phase-II/III scope prose with detected artifact status:
+  Phase II `{later_phases['phase2']['status']}`, Phase III-R
+  `{later_phases['phase3_r']['status']}`.
 
 ## Unchanged protected artifacts
 
@@ -1455,16 +2227,17 @@ Date: 2026-07-31.
 - Technical outcome: `{outcome['outcome']}`.
 - Thresholds: `k_50gap={k_50gap}`,
   `k_nonrobust={k_nonrobust}`, `delta={outcome['delta']}`.
-- No feature generation, reader fitting, Phase II, or Phase III was executed.
+- This revision did not generate features, fit readers, train encoders or run a
+  new experimental phase.
 """
-    (destination / "CHANGELOG_NARRATIVE_20260731.md").write_text(
-        changelog, encoding="utf-8"
+    atomic_write_text(
+        destination / "CHANGELOG_NARRATIVE_20260731.md", changelog
     )
 
     payload = {
         "primary_result": primary_result,
         "technical_classification": {
-            "role": "secondary",
+            "role": "frozen_preregistered_technical_outcome",
             "label": outcome["outcome"],
             "wording": f"{outcome['outcome']} with a robust ceiling gap",
             "unchanged_record": outcome,
@@ -1478,10 +2251,19 @@ Date: 2026-07-31.
         "figure_06_audit": figure_06_audit,
         "whitening_nonmonotonicity": nonmonotonicity_manifest,
         "parity": parity,
+        "later_phase_context": later_phases,
+        "critical_budget_metrics": {
+            "path": "16_critical_budget_metrics.parquet",
+            "n_rows": len(critical_metrics),
+        },
+        "claim_table": {
+            "path": "17_claim_table.parquet",
+            "n_rows": len(claim_table),
+        },
         "protected_inputs": protected_inputs,
         "narrative_revision": {
-            "date": "2026-07-31",
-            "previous_report_sha256": previous_report_sha256,
+            "date": "2026-08-25",
+            "superseded_report_identity": "version_control_history",
             "results_or_technical_summary_modified": False,
         },
         "time_of_day_sensitivity_rows": len(sensitivity_summary),
@@ -1489,8 +2271,9 @@ Date: 2026-07-31.
         "report": "REPORT_EXPERIMENT_01.md",
         "narrative_summary": "SUMMARY_NARRATIVE_EXPERIMENT_01.md",
         "changelog": "CHANGELOG_NARRATIVE_20260731.md",
-        "phase2_started": False,
-        "phase3_started": False,
+        "phase2_status": later_phases["phase2"]["status"],
+        "phase3_r_status": later_phases["phase3_r"]["status"],
     }
+    payload = portable_payload(payload)
     atomic_write_json(destination / "report_manifest.json", payload)
     return payload

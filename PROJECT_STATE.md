@@ -1,6 +1,6 @@
 # Stato scientifico e operativo — Experiment 01
 
-Aggiornato al **2026-08-24**. Questo documento riassume lo stato corrente del
+Aggiornato al **2026-08-27**. Questo documento riassume lo stato corrente del
 progetto. Le specifiche congelate e i report di fase restano le fonti canoniche
 per soglie, procedure e risultati numerici.
 
@@ -14,10 +14,14 @@ per soglie, procedure e risultati numerici.
 | Phase I | completa | `A1` tecnico secondario, con robusto gap di ceiling |
 | Phase II | completa | localizzazione spettrale direzionale profonda |
 | Phase III-R | completa | outcome reader-relative `R3` |
-| suite software | completa | 157 test superati |
+| T2 token-role matched null | completa | asse Hadamard non eccezionale nel null strutturato |
+| T3/F16 label-matched | completo | 12/12 training, test one-time, summary e report completi; zero failure |
+| suite software | completa | 187 test superati dopo T2 e F16 |
 
-Non sono previste esecuzioni di Phase II o III aggiuntive. Encoder, bundle,
-split, seed, budget, target, soglie e risultati sono congelati.
+Non sono previste esecuzioni di Phase II o III aggiuntive. Encoder storici,
+bundle, split, seed, budget, target, soglie e risultati Phase I–III sono
+congelati. F16 è un'estensione diagnostica prospettica separata e non modifica
+nessuno di questi artefatti.
 
 ## Conclusione scientifica
 
@@ -100,6 +104,86 @@ Ceiling MLP full-budget horizon-JEPA:
 Il reader non lineare recupera contenuto operativo ma non elimina la difficoltà
 finite-sample relativa.
 
+## T2 — diagnostica token-role dimension matched
+
+Report: [REPORT_EXPERIMENT_01_TOKEN_ROLE.md](docs/results/token_role/REPORT_EXPERIMENT_01_TOKEN_ROLE.md).
+
+Il gate ha riprodotto 1.188 celle storiche full/common/complement con errore
+massimo `1,79e-12`. Il test primario ha poi confrontato l'asse all-ones e il suo
+complemento con 100 rotazioni Haar nello spazio dei quattro ruoli, separatamente
+per tre bracci, tre encoder seed e due readout.
+
+Per horizon-JEPA `last_concat512`, i p-value lower-tail del blocco common sono
+`0,0990 / 0,0594 / 0,0990`; quelli upper-tail del complemento sono
+`0,1287 / 0,1287 / 0,0990`. Nessuna delle due condizioni preregistrate vale in
+tutti i seed; lo stesso esito decisionale si ottiene per gli altri bracci e per
+`meanK_concatS`.
+
+Conclusione: la perdita sotto la proiezione all-ones resta un contrasto
+operativo cross-encoder, ma non supporta un asse Hadamard privilegiato o un
+meccanismo “relational across tokens”. PCA, media temporale e proiezione sui
+ruoli restano operatori distinti. `A1` e `R3` non cambiano.
+
+## T3/F16 — dose response supervised label-matched
+
+Specifica:
+[SPEC_EXPERIMENT_01_F16_LABEL_MATCHED.md](docs/experiment01/SPEC_EXPERIMENT_01_F16_LABEL_MATCHED.md).
+Audit del training:
+[TRAINING_PROTOCOL.md](docs/experiment01/TRAINING_PROTOCOL.md).
+
+L'audit fail-closed dei nove checkpoint canonici ha verificato architettura,
+target, optimizer, budget, storia di validation, dimensioni e SHA-256. Ha anche
+ricostruito le identità storiche delle righe: i tre bracci sono row-matched
+dentro lo stesso seed, mentre coppie di encoder seed condividono soltanto circa
+il `7,5%` delle rispettive 500.000 righe. F16 usa invece lo stesso manifest di
+righe per tutti i seed.
+
+Il gate di convergenza target-blind ha confrontato i cap
+`128/256/512/1024` su 504 celle usando solo train e validation dei checkpoint
+congelati. Tutte le 504 celle passano già a `128`, che è quindi il cap
+preregistrato selezionato:
+
+| uso | righe | stock-day coperti |
+|---|---:|---:|
+| covariance train | 195.460 | 1.528 |
+| validation | 10.624 | 83 |
+| test sigillato | 11.136 | 87 |
+
+La griglia production è completa: 12/12 encoder, zero failure, `2,90 h` di
+wall-time cumulativo, peak RAM `3,66 GiB` e peak VRAM `0,96 GiB`. Sono stati
+congelati 12 checkpoint best e 12 checkpoint epoch-20. L'analisi ha ridotto
+sequenzialmente 33 feature set a statistiche sufficienti; checkpoint, alpha e
+whitening-k sono stati congelati prima dell'unico unlock del test.
+
+Report:
+[REPORT_EXPERIMENT_01_F16.md](docs/results/f16/REPORT_EXPERIMENT_01_F16.md).
+
+Il confronto primario Axis A, direzionale `last_concat512`, mostra un vantaggio
+F16-supervised su horizon-JEPA in tutti i budget e seed. Il gap varia da
+`0,172–0,184` a `b_1_4`, `0,195–0,270` a `b_1`, `0,152–0,160` a `b_4` e
+`0,137–0,152` a `b_16`; tutti i 12 intervalli grouped al 95% escludono zero e
+anche i 84 leave-one-stock-out restano positivi.
+
+Due flag preregistrati passano e vanno mantenuti distinti:
+
+- supervised-like a basso volume: passa a `b_1` (28.446 righe); a `b_1_4`
+  Axis A è già oltre il midpoint, ma Axis B non lo è in tutti i seed;
+- dipendenza smooth dal volume: passano 4 famiglie su 6 — Axis A, Axis B,
+  perdita al pooling e whitening-k128.
+
+Role retention e top-k predictive mass non sono monotoni in tutti i seed. Non
+passano né il floor di ottimizzazione né la specificità direzionale rispetto a
+entrambi i controlli. Quindi F16 supporta un rapido riassetto dell'accessibilità
+e alcune proprietà geometriche sotto supervisione target-aligned, ma non una
+storia unica in cui tutte le diagnostiche spettrali si muovono insieme.
+L'outcome Phase-I `A1 con robusto gap di ceiling` resta invariato.
+
+Due amendment post-test sono registrati senza riaprire il test: conversione
+strettamente seriale `NaN→null` e correzione della frontiera numerica per tre
+Spearman matematicamente pari a `0,8` ma rappresentati come
+`0,7999999999999999`. R², checkpoint, alpha, soglie e risultati non sono stati
+modificati.
+
 ## Asset canonici
 
 | asset | percorso locale | stato |
@@ -108,6 +192,8 @@ finite-sample relativa.
 | dataset processato | `data/lobench_processed.npz` | 8.039.246 righe, 162 MiB |
 | bundle production | `validation/experiment01_bundle_20260730` | completo, circa 253 GiB |
 | output completi | `validation/experiment01/execution_20260730` | completi, circa 6,1 GiB |
+| T2 token-role | `validation/experiment01/token_role_20260826` | completo, circa 93 MiB, zero failure |
+| F16 completo | `validation/experiment01/f16_20260826` | 12/12 training, fixed test, grouped uncertainty e report; circa 1,3 GB |
 | checkpoint multiseed | `checkpoints/multiseed` | 3 bracci × 3 seed canonici |
 | risultati Git | `docs/results/` | report, figure e metadata, circa 3,8 MiB |
 | archivio checkpoint | `dist/experiment01_canonical_checkpoints_ep020.tar` | 9 file, 84.213.760 byte |
@@ -121,6 +207,18 @@ bdded4ebd03c29d47e5dfdba106590f24763cc06bb7e6e5ea379eb4b34201c0b
 Phase-II manifest
 1a30b67f6739a1a0440eae1866ee55f72cddf94248e5edf336a7e605461144c2
 
+T2 token-role manifest
+ef23d6517d20252c1cfd58a0e89e86f8093b91ca7867a92274d240df9b0fdc83
+
+F16 specification
+b578bbf369996ea90c0766cd4a9691dd4a3922ad88f0adafac2c87a4160a8f6a
+
+F16 selected cohort manifest
+c826b6005e9ea2311099c1b17997591c2138842b1e9f4f98aad9b2b6c781eb40
+
+F16 final manifest
+799dde94a32e3405af2c0ab7e5fd9cc50f11563eed48f44593037c011f9bcbc0
+
 checkpoint release archive
 3e268b6fa73a122399e4b420e989a4d37112e2696efe55b4bf095892ab82ed06
 ```
@@ -129,7 +227,7 @@ checkpoint release archive
 
 | percorso | responsabilità |
 |---|---|
-| `experiment01/` | implementazione delle tre fasi di Experiment 01 |
+| `experiment01/` | implementazione delle fasi e diagnostiche di Experiment 01 |
 | `experiment01/reference/` | gate congelati di equivalenza e riproduzione |
 | `training/` | training canonico dei tre bracci |
 | `scripts/dataset/` | builder CSV→NPZ |
@@ -145,6 +243,8 @@ checkpoint release archive
 - Non modificare encoder, budget, seed, split, alpha grid, whitening-k, target,
   eligibility o soglie delle analisi congelate.
 - Non usare il test per selezionare iperparametri.
+- F16 è completo: non riaprire il test, non cambiare selezioni e non
+  reinterpretare gli amendment di serializzazione come cambiamenti scientifici.
 - Conservare separati directional, volatility e timing.
 - Usare `last_concat512` come readout primario e `meanK_concatS` come controllo
   dell'interfaccia di pooling.

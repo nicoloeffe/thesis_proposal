@@ -1,0 +1,236 @@
+{
+  "corrective_diagnostics": {
+    "token_role_t2": {
+      "path": "validation/experiment01/token_role_20260826/manifest.json",
+      "phase1_outcome_modified": false,
+      "phase3_outcome_modified": false,
+      "sha256": "ef23d6517d20252c1cfd58a0e89e86f8093b91ca7867a92274d240df9b0fdc83",
+      "status": "complete"
+    }
+  },
+  "current_phase2_directory_manifest": {
+    "is_original_phase3_gate_identity": false,
+    "original_phase3_gate_identity_preserved_above": true,
+    "path": "validation/experiment01/execution_20260730/phase2/manifest.json",
+    "role": "post_hoc_report_revision_state",
+    "sha256": "e7402f386c2bed2b498e7c99ff2362aeae9ffa471626904f73953027887e5083"
+  },
+  "frozen_scientific_artifacts": [
+    {
+      "path": "validation/experiment01/execution_20260730/phase1/results.parquet",
+      "sha256": "ecf4e410c595baa32d06a1998bbd5151794d02ff141499af3c1f56268e110ffb",
+      "size_bytes": 522676491,
+      "verified_against_frozen_hash": true
+    },
+    {
+      "path": "validation/experiment01/execution_20260730/summary/summary.json",
+      "sha256": "7978961be69e50881ac022a67bfd7fea4f619c9806374121b57d6d4cbac1d4a6",
+      "size_bytes": 5063,
+      "verified_against_frozen_hash": true
+    },
+    {
+      "path": "validation/experiment01/execution_20260730/phase2/phase2_results.parquet",
+      "sha256": "a0a3a5ea609f8347af0ce29c2ef4fd000cd847ecf24b9df544d7b1f600449fb3",
+      "size_bytes": 2357176,
+      "verified_against_frozen_hash": true
+    },
+    {
+      "path": "validation/experiment01/execution_20260730/phase2/predictive_mass.parquet",
+      "sha256": "fecf798a2cf042d5a872a5d173c9710849e038d016a00d93eea6beff86dd6727",
+      "size_bytes": 6271740,
+      "verified_against_frozen_hash": true
+    },
+    {
+      "path": "validation/experiment01/execution_20260730/phase2/summary.json",
+      "sha256": "bfc2c9f000d85d1555f3004bad73aa08728d20f54e9f28c86ba31f8a159a432e",
+      "size_bytes": 23783,
+      "verified_against_frozen_hash": true
+    },
+    {
+      "path": "validation/experiment01/execution_20260730/phase3_reduced/phase3_results.parquet",
+      "sha256": "f31fe3926fe8ff5512a9f77069c233209b75c3b9c73f348e3464176c2a9e190e",
+      "size_bytes": 275100,
+      "verified_against_frozen_hash": true
+    },
+    {
+      "path": "validation/experiment01/execution_20260730/phase3_reduced/summary.json",
+      "sha256": "e5e707a40c040cd5062439670a1aa33a0b7ea21dd5b23c59557f2e9299d6c4d6",
+      "size_bytes": 2738,
+      "verified_against_frozen_hash": true
+    }
+  ],
+  "historical_execution_manifests": {
+    "phase2": {
+      "artifact_hashes_verified_before_phase3": 166,
+      "attested_by": "validation/experiment01/execution_20260730/phase3_reduced/artifact_identity_gate.json",
+      "sha256": "1a30b67f6739a1a0440eae1866ee55f72cddf94248e5edf336a7e605461144c2"
+    },
+    "phase3_reduced": {
+      "path": "validation/experiment01/execution_20260730/phase3_reduced/phase3_manifest.json",
+      "sha256": "31a260a084571e19114d810f7ae2efd4f35b6e1c75ed5c6a06bc7a288366f104"
+    }
+  },
+  "interpretation": {
+    "phase1": "frozen A1; revised narrative and read-only diagnostics",
+    "phase2": "frozen spectral results; revised report only",
+    "phase3_r": "frozen R3 technical classification; revised reader-specific interpretation and raw-metric disclosure",
+    "token_role": "historical fixed-projection observation retained; completed structured role-Haar null does not support a privileged role-contrast mechanism"
+  },
+  "report_revision_artifacts": [
+    {
+      "byte_identical": true,
+      "canonical_path": "validation/experiment01/execution_20260730/report/REPORT_EXPERIMENT_01.md",
+      "published_path": "docs/results/phase1/REPORT_EXPERIMENT_01.md",
+      "sha256": "496685a4dfef911a3455825e99956efa1953b62b51bcd222c7b5081ef93cdeaa",
+      "size_bytes": 18080
+    },
+    {
+      "byte_identical": true,
+      "canonical_path": "validation/experiment01/execution_20260730/report/SUMMARY_NARRATIVE_EXPERIMENT_01.md",
+      "published_path": "docs/results/phase1/SUMMARY_NARRATIVE_EXPERIMENT_01.md",
+      "sha256": "6dc6415f579e4fdceacf213b6af599e1d55ddfe7ee5cfe50ce7902e00a8568d8",
+      "size_bytes": 2446
+    },
+    {
+      "byte_identical": true,
+      "canonical_path": "validation/experiment01/execution_20260730/report/CHANGELOG_NARRATIVE_20260731.md",
+      "published_path": "docs/results/phase1/CHANGELOG_NARRATIVE_20260731.md",
+      "sha256": "5701d4636a9cab6b0ed989df3e1cff3235635ab146547252af2a64d6d0bc30cd",
+      "size_bytes": 2953
+    },
+    {
+      "byte_identical": true,
+      "canonical_path": "validation/experiment01/execution_20260730/report/16_critical_budget_metrics.parquet",
+      "published_path": "docs/results/phase1/16_critical_budget_metrics.parquet",
+      "sha256": "e48e1356960ace3aaf075f552d0a56e7e1a7098f77d3301dcaa74f680b6eb228",
+      "size_bytes": 12959
+    },
+    {
+      "byte_identical": true,
+      "canonical_path": "validation/experiment01/execution_20260730/report/17_claim_table.parquet",
+      "published_path": "docs/results/phase1/17_claim_table.parquet",
+      "sha256": "bfdfa3580d30372714bfadbb166d6256d6fd59c9db73850f13a0b826025d7e52",
+      "size_bytes": 9522
+    },
+    {
+      "byte_identical": true,
+      "canonical_path": "validation/experiment01/execution_20260730/report/report_manifest.json",
+      "published_path": "docs/results/phase1/report_manifest.json",
+      "sha256": "ca1718c5f2498612095c60316260e9ad67158b813b3bdcb924c260c791c09ab7",
+      "size_bytes": 19695
+    },
+    {
+      "byte_identical": true,
+      "canonical_path": "validation/experiment01/execution_20260730/phase2/REPORT_EXPERIMENT_01_PHASE2.md",
+      "published_path": "docs/results/phase2/REPORT_EXPERIMENT_01_PHASE2.md",
+      "sha256": "c1fb79c04c55f62d463f80bef4a43d883228dc9c74803c15fe1a23dbb2aade36",
+      "size_bytes": 14089
+    },
+    {
+      "byte_identical": true,
+      "canonical_path": "validation/experiment01/execution_20260730/phase3_reduced/AUDIT_EXPERIMENT_01_PHASE3.md",
+      "published_path": "docs/results/phase3r/AUDIT_EXPERIMENT_01_PHASE3.md",
+      "sha256": "1635c5c210fa256b890386221956e232a546a521a19328ea7911b03be585bff9",
+      "size_bytes": 10534
+    },
+    {
+      "byte_identical": true,
+      "canonical_path": "validation/experiment01/execution_20260730/phase3_reduced/REPORT_EXPERIMENT_01_PHASE3.md",
+      "published_path": "docs/results/phase3r/REPORT_EXPERIMENT_01_PHASE3.md",
+      "sha256": "3d971156ad003673a46b07f2a8907b52db9a8f0c46d70612cb2f6c57fe1559ee",
+      "size_bytes": 12344
+    },
+    {
+      "byte_identical": true,
+      "canonical_path": "validation/experiment01/execution_20260730/phase3_reduced/SUMMARY_NARRATIVE_EXPERIMENT_01_PHASE3.md",
+      "published_path": "docs/results/phase3r/SUMMARY_NARRATIVE_EXPERIMENT_01_PHASE3.md",
+      "sha256": "9cc45e5817f8a11beec448af007c8e4d5ef3d0dbe4f5c5b3eb4ca80b8766a4ab",
+      "size_bytes": 1196
+    },
+    {
+      "byte_identical": true,
+      "canonical_path": "validation/experiment01/execution_20260730/phase3_reduced/CHANGELOG_PHASE3.md",
+      "published_path": "docs/results/phase3r/CHANGELOG_PHASE3.md",
+      "sha256": "eac808baa738cde88271f42bc60cab07956fc725fa3a25526fab82c8dc5c1519",
+      "size_bytes": 1096
+    },
+    {
+      "byte_identical": true,
+      "canonical_path": "validation/experiment01/execution_20260730/phase3_reduced/phase3_report_metrics.parquet",
+      "published_path": "docs/results/phase3r/phase3_report_metrics.parquet",
+      "sha256": "6286e20757a1a32f36a1657bb0e991068d809592566ff481cf92157e9df5d067",
+      "size_bytes": 14617
+    }
+  ],
+  "reporting_code_modified": true,
+  "revised_repository_files": [
+    {
+      "path": "README.md",
+      "sha256": "2cdf28b91f6a258c77ef6acc18cbc1f15c607bbce650e9ac64086b214f646298",
+      "size_bytes": 10204
+    },
+    {
+      "path": "docs/research/RESEARCH_NOTE_GEOMETRY_ACCESSIBILITY.md",
+      "sha256": "d507a40b401b35a187b73f2dc612c328ad5ff944652f16e39d4d46902958fbc7",
+      "size_bytes": 27996
+    },
+    {
+      "path": "docs/results/README.md",
+      "sha256": "9f53426f1d3fdbde7908b950719e649cf25f66a38207fd02bdc4c4631443ef89",
+      "size_bytes": 1556
+    },
+    {
+      "path": "docs/results/CHANGELOG_REPORT_REVISION_20260825.md",
+      "sha256": "f2c700dd556525b144431a8e76ff3909bf376d05da3dc232d9ae4fbff3387f32",
+      "size_bytes": 4559
+    },
+    {
+      "path": "docs/results/token_role/REPORT_EXPERIMENT_01_TOKEN_ROLE.md",
+      "sha256": "fa58ba49784a5a8f4f75ec816902a37873d602dfa2b340d5fa9d2aa1c374096d",
+      "size_bytes": 5040
+    },
+    {
+      "path": "docs/experiment01/SPEC_EXPERIMENT_01_TOKEN_ROLE_MATCHED_NULL_20260826.md",
+      "sha256": "51db7780a12fefe41e3191e5fef77ce4e87deee5becf861a0000fc8c30864a68",
+      "size_bytes": 11455
+    },
+    {
+      "path": "PROJECT_STATE.md",
+      "sha256": "b43804a45cfdaabdceaa204f80e92a51ff86eba5c05b3b20ac7e8b10770cfe44",
+      "size_bytes": 7865
+    },
+    {
+      "path": "experiment01/io.py",
+      "sha256": "f439a719d521f2e9e6360b32457d9192cc8c93948f1315d53bf3dd6d7899a34c",
+      "size_bytes": 8284
+    },
+    {
+      "path": "experiment01/reporting.py",
+      "sha256": "9f3a9c24f02246951335e3e9360906a8fb98ab8ba7416cfe962854146773f860",
+      "size_bytes": 87572
+    },
+    {
+      "path": "experiment01/phase2_reporting.py",
+      "sha256": "fd1fcd223e0120c821d4b8076b55fa96196f12bd7bc6be05751e6a74947e78a3",
+      "size_bytes": 51493
+    },
+    {
+      "path": "experiment01/phase3_reporting.py",
+      "sha256": "7be3e187ce54372ffb6d96352666bcd6101e8d9f85a33d5b615939a32991c588",
+      "size_bytes": 81579
+    },
+    {
+      "path": "scripts/experiment01/write_report_revision_provenance.py",
+      "sha256": "9dda333f9f6212e3c30ecfb819f4e74ef23f794d3b69be1878c698344b1d2707",
+      "size_bytes": 10973
+    }
+  ],
+  "revision_date": "2026-08-25",
+  "schema_name": "thesis.experiment01.report_revision_provenance",
+  "schema_version": 1,
+  "scientific_compute_pipeline_modified": false,
+  "scientific_results_modified": false,
+  "scope": "narrative_and_read_only_report_diagnostics_only",
+  "technical_outcomes_modified": false,
+  "thresholds_modified": false
+}

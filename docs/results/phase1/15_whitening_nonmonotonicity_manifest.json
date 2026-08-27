@@ -1,0 +1,48 @@
+{
+  "artifacts": {
+    "intervals": {
+      "n_rows": 12,
+      "path": "15_whitening_nonmonotonicity_intervals.parquet"
+    },
+    "paired_differences": {
+      "n_rows": 9,
+      "path": "15_whitening_nonmonotonicity_paired_differences.parquet"
+    },
+    "paired_differences_per_encoder": {
+      "n_rows": 27,
+      "path": "15_whitening_nonmonotonicity_paired_by_encoder.parquet"
+    },
+    "per_encoder": {
+      "n_rows": 36,
+      "path": "15_whitening_nonmonotonicity_by_encoder.parquet"
+    }
+  },
+  "scope": {
+    "bootstrap": {
+      "algorithm": "encoder_then_within_encoder_paired_resampling",
+      "n_draws": 5000,
+      "seed": 0
+    },
+    "budget_aggregation": "mean within encoder/subsample over decisive budgets before hierarchical resampling",
+    "decisive_budgets_days_per_stock": [
+      0.125,
+      0.25
+    ],
+    "gap": "supervised_minus_jepa_horizon_normalized_recovery",
+    "interpretation_policy": "diagnostic does not alter the preregistered technical outcome",
+    "reader_family": "ridge_whiten_topk_tuned_alpha",
+    "readout": "last_concat512",
+    "status": "post_hoc_diagnostic_only",
+    "target_blocks": [
+      "directional",
+      "volatility",
+      "timing"
+    ],
+    "whitening_depths": [
+      8,
+      16,
+      32,
+      64
+    ]
+  }
+}

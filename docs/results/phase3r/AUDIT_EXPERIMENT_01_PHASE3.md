@@ -1,4 +1,16 @@
-# Experiment 01 Phase III — pre-implementation audit
+# Experiment 01 Phase III — historical pre-implementation audit
+
+> **Document scope.** This is the frozen pre-execution audit. Its statements
+> about result availability describe that point in the execution timeline, not
+> the current repository state. Phase III-R subsequently completed; see
+> `REPORT_EXPERIMENT_01_PHASE3.md` for the current result and classification.
+>
+> **Protocol version.** The governing document is the later definitive
+> [`SPEC_EXPERIMENT_01_PHASE3_READER_ACCESSIBILITY_20260801.md`](https://github.com/nicoloeffe/thesis_proposal/blob/main/docs/experiment01/SPEC_EXPERIMENT_01_PHASE3_READER_ACCESSIBILITY_20260801.md),
+> SHA-256
+> `78ca15821ac40355c35e5f40ecaf5086f5e6bbb6f339255a85b13fc7d952a151`.
+> It replaces the eligibility rule in the earlier optional MLP section; hence
+> `b_min_mlp = b_1_4` is not an ineligible executed budget.
 
 Date: 2026-08-01  
 Repository commit at audit start: `6a94bd5890539037a00fa7f635776707ed647183`  
@@ -8,7 +20,7 @@ Protocol status: Phase I and Phase II are frozen; Phase-I technical outcome `A1`
 
 This document was created before adding or modifying Phase-III production code. It records the historical reader semantics, frozen-artifact identities, subset eligibility, and the acceptance gates that must pass before production MLP training.
 
-The requested project-state file `STATO_TESI_POST_PHASE2_20260731.md` was not present in the repository or under `/home/nicolo` at audit time. The audit therefore uses the frozen Phase-I and Phase-II reports, summaries, manifests, source, and the definitive Phase-III specification. This absence does not authorize inference or weakening of any artifact identity.
+The requested project-state file `STATO_TESI_POST_PHASE2_20260731.md` was not present in the repository or the inspected user workspace at audit time. The audit therefore uses the frozen Phase-I and Phase-II reports, summaries, manifests, source, and the definitive Phase-III specification. This absence does not authorize inference or weakening of any artifact identity.
 
 The working tree was already substantially dirty at audit start, with pre-existing deleted and untracked research artifacts. Those changes are treated as user-owned and are not restored or overwritten. Phase III writes only to its new output directory plus explicitly named Phase-III source/tests.
 

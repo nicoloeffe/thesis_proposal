@@ -20,6 +20,7 @@ from .errors import ExperimentIntegrityError
 from .io import (
     atomic_write_json,
     atomic_write_parquet,
+    atomic_write_text,
     canonical_json_sha256,
     sha256_file,
 )
@@ -533,6 +534,7 @@ def _figure_bridge(bridge: pd.DataFrame, path: Path) -> None:
         .mean()
         .reset_index()
     )
+    k_50gap, k_nonrobust, _ = _bridge_thresholds(bridge)
     figure, axes = plt.subplots(1, 3, figsize=(13.2, 4.1), sharex=True)
     for axis, block in zip(axes, BLOCKS):
         selected = gaps[gaps["target_block"].eq(block)]
@@ -549,8 +551,8 @@ def _figure_bridge(bridge: pd.DataFrame, path: Path) -> None:
             marker="s",
             label="horizon mass",
         )
-        axis.axvline(128, color="black", linewidth=0.7, linestyle=":")
-        axis.axvline(508, color="black", linewidth=0.7, linestyle=":")
+        axis.axvline(k_50gap, color="black", linewidth=0.7, linestyle=":")
+        axis.axvline(k_nonrobust, color="black", linewidth=0.7, linestyle=":")
         axis.set_title(block)
         axis.set_xlabel("whitening depth / mass top-k")
         axis.set_ylabel("Phase-I normalized gap")
@@ -572,6 +574,27 @@ def _markdown_table(rows: Iterable[Mapping[str, object]], columns: Iterable[str]
         for row in body
     )
     return "\n".join(lines)
+
+
+def _bridge_thresholds(bridge: pd.DataFrame) -> tuple[int, int, list[int]]:
+    k_50 = sorted(
+        bridge.loc[bridge["is_k_50gap"].eq(True), "k_requested"]
+        .dropna()
+        .unique()
+        .tolist()
+    )
+    k_nonrobust = sorted(
+        bridge.loc[bridge["is_k_nonrobust"].eq(True), "k_requested"]
+        .dropna()
+        .unique()
+        .tolist()
+    )
+    if len(k_50) != 1 or len(k_nonrobust) != 1:
+        raise ExperimentIntegrityError("Phase-I whitening bridge thresholds differ")
+    depths = sorted(
+        int(value) for value in bridge["k_requested"].dropna().unique()
+    )
+    return int(k_50[0]), int(k_nonrobust[0]), depths
 
 
 def _external_compute_metrics(root: Path) -> Mapping[str, object]:
@@ -614,24 +637,10 @@ def _primary_mass_rows(intervals: pd.DataFrame) -> list[dict[str, object]]:
 
 
 def _nonmonotonic_status(intervals: pd.DataFrame) -> str:
-    selected = intervals[
-        intervals["readout"].eq("last_concat512")
-        & intervals["target_block"].eq("directional")
-        & intervals["metric"].eq(
-            "predictive_mass_fraction_33_64_minus_17_32"
-        )
-        & intervals["branch"].isin(["supervised", "jepa_horizon"])
-    ]
-    robust = len(selected) == 2 and selected[
-        "supports_33_64_more_informative"
-    ].all()
+    del intervals
     return (
-        "supportata in modo gerarchicamente robusto per entrambi i rami decisivi"
-        if robust
-        else (
-            "non supportata in modo robusto per entrambi i rami decisivi; resta "
-            "una spiegazione post hoc non confermata"
-        )
+        "not_dimension_matched: 17:32 has 16 directions and 33:64 has 32; "
+        "the legacy paired difference cannot test the proposed mechanism"
     )
 
 
@@ -684,6 +693,42 @@ def _render_report(
         }
         for row in nonmono.sort_values(["metric", "branch"]).itertuples()
     ]
+    spectral_bands = pd.read_parquet(root / "spectral_bands.parquet")
+    selected_bands = spectral_bands[
+        spectral_bands["readout"].eq("last_concat512")
+        & spectral_bands["target_block"].eq("directional")
+        & spectral_bands["band"].isin(NONMONOTONIC_BANDS)
+        & spectral_bands["reader_family"].eq("min_norm_ols_diagnostic")
+    ].copy()
+    if selected_bands.empty or set(selected_bands["band"].unique()) != set(
+        NONMONOTONIC_BANDS
+    ):
+        raise ExperimentIntegrityError("Phase-II band audit cells are missing")
+    matched_band_rows = []
+    for (branch, band, dimension), group in selected_bands.groupby(
+        ["branch", "band", "band_dimension"], observed=True
+    ):
+        dimension = int(dimension)
+        mass_fraction = float(
+            group["predictive_mass_fraction_mean_independent"].mean()
+        )
+        matched_band_rows.append(
+            {
+                "branch": branch,
+                "band": band,
+                "dimension": dimension,
+                "variance fraction": f"{group['variance_fraction'].mean():.4f}",
+                "predictive mass": f"{mass_fraction:.4f}",
+                "mass/direction": f"{mass_fraction / dimension:.6f}",
+                "band-only R2": f"{group['test_r2_band_only'].mean():.4f}",
+                "matched Haar R2": (
+                    f"{group['matched_random_test_r2_mean'].mean():.4f}"
+                ),
+                "p(random > band)": (
+                    f"{group['empirical_p_random_exceeds_band'].mean():.3f}"
+                ),
+            }
+        )
     gap = (
         bridge.groupby(
             ["target_block", "budget_days_per_stock", "k_requested"],
@@ -711,6 +756,102 @@ def _render_report(
         mass_intervals["readout"].eq("last_concat512")
     ]
 
+    k_50gap, k_nonrobust, bridge_depths = _bridge_thresholds(bridge)
+
+    horizon_headline_null = primary_null[
+        primary_null["branch"].eq("jepa_horizon")
+        & primary_null["subspace_dimension"].isin([8, 16])
+    ]
+    supervised_headline_null = primary_null[
+        primary_null["branch"].eq("supervised")
+    ]
+    if horizon_headline_null.empty or supervised_headline_null.empty:
+        raise ExperimentIntegrityError("Phase-II headline null cells are missing")
+    random_draws = sorted(horizon_headline_null["random_draws"].unique().tolist())
+    if len(random_draws) != 1:
+        raise ExperimentIntegrityError("Phase-II headline Haar draw counts differ")
+    horizon_seed_count = horizon_headline_null["encoder_seed"].nunique()
+    horizon_all_random_exceed = bool(
+        horizon_headline_null["empirical_p_random_exceeds_top"].eq(1.0).all()
+    )
+    supervised_all_top = bool(
+        supervised_headline_null["top_pca_percentile"].eq(100.0).all()
+    )
+    haar_headline = (
+        f"Per horizon-JEPA direzionale, tutti i {int(random_draws[0])} "
+        f"sottospazi Haar superano top-PCA a k=8 e k=16 in ciascuno dei "
+        f"{horizon_seed_count} encoder seed."
+        if horizon_all_random_exceed
+        else (
+            "Per horizon-JEPA direzionale, almeno una cella k=8/16 non è "
+            "superata da tutti i sottospazi Haar; si vedano i valori per seed."
+        )
+    )
+    supervised_null_headline = (
+        "Supervised top-PCA è al percentile 100 del null a tutte le profondità "
+        "riportate."
+        if supervised_all_top
+        else (
+            "Supervised top-PCA non raggiunge il percentile 100 del null in "
+            "tutte le profondità riportate."
+        )
+    )
+    horizon_by_k = primary_null[
+        primary_null["branch"].eq("jepa_horizon")
+    ].groupby("subspace_dimension", observed=True).agg(
+        empirical_p=("empirical_p_random_exceeds_top", "mean"),
+        percentile=("top_pca_percentile", "mean"),
+    )
+    transition_depths = [
+        int(k)
+        for k, row in horizon_by_k.iterrows()
+        if 0.0 < float(row.empirical_p) < 1.0
+    ]
+    top_dominant_depths = [
+        int(k)
+        for k, row in horizon_by_k.iterrows()
+        if float(row.empirical_p) == 0.0 and float(row.percentile) == 100.0
+    ]
+    horizon_transition_text = (
+        "La transizione è eterogenea alle profondità "
+        + ", ".join(str(value) for value in transition_depths)
+        + "; top-PCA domina il null alle profondità "
+        + ", ".join(str(value) for value in top_dominant_depths)
+        + "."
+    )
+
+    parity_records = metadata["phase1_full_rank_min_norm_parity"]
+    parity_feature_count = len(parity_records)
+    parity_target_counts = sorted({int(row["n_targets"]) for row in parity_records})
+    if len(parity_target_counts) != 1:
+        raise ExperimentIntegrityError("Phase-I parity target counts differ")
+    phase1_outcomes = sorted(
+        bridge["phase1_outcome_unchanged"].dropna().unique().tolist()
+    )
+    if len(phase1_outcomes) != 1:
+        raise ExperimentIntegrityError("Phase-I outcome differs within bridge")
+    phase1_outcome = str(phase1_outcomes[0])
+
+    phase3_summary = root.parent / "phase3_reduced" / "summary.json"
+    if phase3_summary.is_file():
+        phase3_payload = json.loads(phase3_summary.read_text())
+        if phase3_payload.get("status") != "complete":
+            raise ExperimentIntegrityError(
+                "detected Phase-III-R summary is not complete"
+            )
+        current_later_status = (
+            "Nel repository è ora presente anche Phase III-R completata; questa "
+            "evidenza successiva non modifica Phase II né l'outcome Phase I."
+        )
+    else:
+        current_later_status = (
+            "Non è presente un summary Phase III-R completato accanto a questo run."
+        )
+
+    failure_rows = int(metadata.get("artifacts", {}).get("failures", {}).get("n_rows", -1))
+    if failure_rows < 0:
+        raise ExperimentIntegrityError("Phase-II metadata lacks failure row count")
+
     def mass_value(branch: str, block: str, k: int) -> float:
         selected = primary_mass[
             primary_mass["branch"].eq(branch)
@@ -725,37 +866,37 @@ def _render_report(
 
 ## Stato e risultato
 
-Phase II è completata come analisi diagnostica preregistrata. Phase I non è stata modificata: soglie, risultati e outcome tecnico **A1** restano congelati. Non sono stati avviati MLP, nuovi training, VICReg, simulatori o Phase III.
+Phase II è completata come analisi diagnostica preregistrata. Phase I non è stata modificata: soglie, risultati e outcome tecnico **{phase1_outcome}** restano congelati. Durante Phase II non sono stati eseguiti MLP, nuovi training, VICReg o simulatori. {current_later_status}
 
-Il gate storico PCA post-P0 passa su {gate['n_cells']} celle con errore assoluto massimo `{gate['maximum_absolute_difference']:.3e}` (tolleranza `{gate['tolerance']:.1e}`). Il gate aggiuntivo full-rank Phase I↔Phase II passa per tutte le 18 feature e 23 target, con errore massimo `{parity_max:.3e}`.
+Il gate storico PCA post-P0 passa su {gate['n_cells']} celle con errore assoluto massimo `{gate['maximum_absolute_difference']:.3e}` (tolleranza `{gate['tolerance']:.1e}`). Il gate aggiuntivo full-rank Phase I↔Phase II passa per tutte le {parity_feature_count} feature e {parity_target_counts[0]} target, con errore massimo `{parity_max:.3e}`.
 
 ### Diagnosi in breve
 
-- **Specificità direzionale netta.** Su `last_concat512`, horizon-JEPA colloca soltanto {mass_value('jepa_horizon', 'directional', 8):.4f} e {mass_value('jepa_horizon', 'directional', 16):.4f} della massa direzionale cumulativa nelle prime 8 e 16 PC; supervised ne colloca rispettivamente {mass_value('supervised', 'directional', 8):.4f} e {mass_value('supervised', 'directional', 16):.4f}. Per horizon-JEPA a k=8 i controlli sono molto meno estremi: volatilità {mass_value('jepa_horizon', 'volatility', 8):.4f}, timing {mass_value('jepa_horizon', 'timing', 8):.4f}.
-- **Top-PCA underperformance localizzata.** Per horizon-JEPA direzionale, tutti i 100 sottospazi Haar superano top-PCA a k=8 e k=16 in ciascuno dei tre encoder seed. La transizione è eterogenea a k=32/64 e top-PCA domina il null a k=128/256. Supervised top-PCA è al percentile 100 del null a tutte le profondità riportate.
+- **Specificità direzionale descrittiva.** Su `last_concat512`, horizon-JEPA colloca soltanto {mass_value('jepa_horizon', 'directional', 8):.4f} e {mass_value('jepa_horizon', 'directional', 16):.4f} della massa direzionale cumulativa nelle prime 8 e 16 PC; supervised ne colloca rispettivamente {mass_value('supervised', 'directional', 8):.4f} e {mass_value('supervised', 'directional', 16):.4f}. Per horizon-JEPA a k=8 i controlli sono molto meno estremi: volatilità {mass_value('jepa_horizon', 'volatility', 8):.4f}, timing {mass_value('jepa_horizon', 'timing', 8):.4f}. Il contrasto resta una diagnostica finché manca incertezza raggruppata per stock-day.
+- **Top-PCA underperformance localizzata.** {haar_headline} {horizon_transition_text} {supervised_null_headline}
 - **Meccanismo coerente con whitening profondo, non prova causale.** Horizon-JEPA raggiunge solo {mass_value('jepa_horizon', 'directional', 128):.4f} della massa direzionale a k=128 e {mass_value('jepa_horizon', 'directional', 256):.4f} a k=256, contro {mass_value('supervised', 'directional', 128):.4f} e {mass_value('supervised', 'directional', 256):.4f} per supervised. Questa dispersione fornisce una spiegazione spettrale coerente del gap finite-sample e della profondità di whitening, ma il ponte resta descrittivo perché il whitening riscala il full rank anziché troncarlo.
-- **La storia locale 17:32→33:64 non regge come spiegazione generale.** Il confronto paired non è robustamente positivo per entrambi i rami decisivi; la non-monotonia resta non spiegata da quella singola coppia di bande.
+- **La storia locale 17:32→33:64 non è un confronto dimension-matched.** La prima banda contiene 16 direzioni e la seconda 32: la loro differenza grezza non può spiegare la non-monotonia. Il report conserva i valori storici come audit, ma usa soltanto il confronto di ciascuna banda con il proprio null Haar matched e la massa per direzione come descrittivi.
 
 ## Protocollo effettivo
 
 - PCA/covarianza: fit esclusivamente sulle feature non etichettate del train canonico completo, separatamente per ramo × encoder seed × readout.
 - Cross-covarianza e predictive mass: train canonico; direzioni oltre il rank numerico sono marcate invalide e mai invertite.
 - Alpha ridge: selezionato esclusivamente su validation; test fisso usato solo per la valutazione finale.
-- Null: 100 sottospazi Haar deterministici per dimensione, reader min-norm diagnostico; nessuna estrazione selezionata sul test.
+- Null: {int(random_draws[0])} sottospazi Haar deterministici per dimensione, reader min-norm diagnostico; nessuna estrazione selezionata sul test.
 - Readout primario: `last_concat512`; secondario: `meanK_concatS`. Blocchi directional, volatility e timing sempre separati.
 - I confronti ridge usano `lambda = alpha * trace(covariance) / dimension` sul design etichettato pertinente.
 
 ## Localizzazione della predictive mass
 
-La tabella seguente riporta la frazione cumulativa media della predictive mass sui target indipendenti. Gli intervalli sono gerarchici sui tre encoder seed.
+La tabella seguente riporta la frazione cumulativa media della predictive mass sui target indipendenti. Gli intervalli gerarchici sui seed misurano robustezza computazionale, non generalizzazione di popolazione.
 
 {_markdown_table(_primary_mass_rows(mass_intervals), ['block', 'branch', 'k', 'mass', '95% CI'])}
 
-Le curve complete, comprese `meanK_concatS` e `jepa_masked`, sono in `predictive_mass_intervals.parquet` e nella figura 01. La predictive mass non è identificata con R² out-of-sample: è una diagnostica population-style stimata sul train e viene confrontata separatamente con ladder e bande sul test.
+Le curve complete, comprese `meanK_concatS` e `jepa_masked`, sono in `predictive_mass_intervals.parquet` e nella figura 01. La predictive mass non è identificata con R² out-of-sample: è una statistica stimata sul train e viene confrontata separatamente con ladder e bande sul test.
 
 ## Top-PCA versus sottospazi Haar
 
-Per il blocco direzionale primario, il percentile top-PCA e la frazione dei 100 null che lo superano sono:
+Per il blocco direzionale primario, il percentile top-PCA e la frazione dei {int(random_draws[0])} null che lo superano sono:
 
 {_markdown_table(null_rows, ['branch', 'k', 'top-PCA R2', 'Haar R2 mean', 'top percentile mean', 'empirical p mean', 'seed range p'])}
 
@@ -763,15 +904,33 @@ I risultati sono riportati per ogni encoder seed in `random_null_summary.parquet
 
 ## Bande spettrali e non-monotonia k=8,16,32,64
 
-Il test post hoc preregistrato confronta in modo paired la banda 17:32 con 33:64. Una differenza positiva significa che 33:64 contiene più predictive mass o produce R² band-only maggiore.
+La differenza storica confronta `17:32` (16 direzioni) con `33:64` (32
+direzioni). Non è quindi un contrasto dimension-matched e non viene usata come
+evidenza a favore o contro una localizzazione meccanicistica. La tabella
+seguente riporta invece, separatamente per banda, il null Haar della stessa
+dimensione e la massa predittiva media per direzione. Le medie sono descrittive
+tra encoder seed; i valori per seed restano negli artefatti.
+
+{_markdown_table(matched_band_rows, ['branch', 'band', 'dimension', 'variance fraction', 'predictive mass', 'mass/direction', 'band-only R2', 'matched Haar R2', 'p(random > band)'])}
+
+Per trasparenza, le differenze paired originarie restano riportate sotto come
+**audit legacy non dimension-matched**. La colonna `robust` descrive soltanto se
+l'intervallo della differenza grezza esclude zero; non corregge il confondimento
+di dimensione.
 
 {_markdown_table(nonmono_rows, ['branch', 'metric', 'difference', '95% CI', 'robust'])}
 
-Conclusione della verifica: **{_nonmonotonic_status(nonmonotonic_intervals)}**. Questa diagnosi non modifica l’interpretazione né l’outcome di Phase I. I risultati per encoder seed sono in `nonmonotonicity_per_encoder.parquet`; tutte le bande, leave-band-out e null matched sono in `spectral_bands.parquet`.
+Conclusione corretta: **la specifica spiegazione 17:32→33:64 resta non
+verificata perché il contrasto diretto è dimension-confounded**. I null matched
+di ciascuna banda sono diagnostiche separate e non trasformano quel confronto
+in un test paired valido. Questa revisione non modifica l'outcome di Phase I né
+il risultato numerico originale. I risultati per encoder seed sono in
+`nonmonotonicity_per_encoder.parquet`; tutte le bande, leave-band-out e null
+matched sono in `spectral_bands.parquet`.
 
 ## Ponte con il whitening Phase I
 
-Il ponte usa senza rifit `k_50gap = 128`, `k_nonrobust = 508` e i gap congelati a k=0,8,16,32,64,128,256,508. Il whitening parziale a 128 dimezza il gap ma non lo elimina; la non-robustezza richiede whitening quasi completo. Phase II non assume né conclude che il problema sia concentrato in poche PC.
+Il ponte usa senza rifit `k_50gap = {k_50gap}`, `k_nonrobust = {k_nonrobust}` e i gap congelati alle profondità {', '.join(str(int(value)) for value in bridge_depths)}. Il whitening a {k_50gap} dimezza il gap ma non lo elimina; la non-robustezza compare a {k_nonrobust}, la massima profondità valida testata. Phase II non assume né conclude che il problema sia concentrato in poche PC.
 
 {_markdown_table(gap_rows, ['block', 'budget', 'k', 'Phase-I gap'])}
 
@@ -783,17 +942,52 @@ Directional, volatility e timing sono riportati separatamente e con identica pro
 
 Il null Haar usa il min-norm OLS diagnostico per preservare la parità con il vecchio PCA ladder post-P0. Il ridge tarato è prodotto per top-k, bottom-k, band-only e leave-band-out, ma non viene usato per selezionare o classificare estrazioni Haar.
 
+Gli intervalli correnti non includono resampling di stock e stock-day; una diagnostica che non sopravvive a tale incertezza raggruppata dovrà essere declassata. Il dataset copre sette titoli di un singolo mercato, usa lo split storico non globalmente cronologico e il test deriva da un held-out set già esplorato storicamente. Questi limiti impediscono di trattare Phase II come conferma esterna.
+
 ## Compute e failure
 
 - Runtime core interno: `{metadata['compute']['runtime_seconds']:.1f}` s; wall time canonico esterno: `{external_compute['wall_time_seconds']:.1f}` s.
 - Peak RAM canonica (`GNU time -v`): `{external_compute['peak_rss_bytes'] / 2**30:.2f}` GiB. Il campionamento interno è conservato in metadata ma non viene usato come stima del picco.
-- Failure tecniche: 0.
-- Cache: statistiche sufficienti in coordinate PCA; nessun rifit sui 270 GB per k, banda o sottospazio.
+- Failure tecniche: {failure_rows}.
+- Cache: statistiche sufficienti in coordinate PCA; nessun rifit dell'intero bundle per ogni k, banda o sottospazio.
 
 ## Artefatti
 
 Gli artefatti canonici sono `phase2_results.parquet`, `predictive_mass.parquet`, `random_subspace_null.parquet`, `spectral_bands.parquet`, `phase1_phase2_bridge.parquet`, `failures.parquet`, `metadata.json`, le tabelle diagnostiche, le figure e `manifest.json`. Tutti gli hash sono registrati nel manifest.
 """
+
+
+def render_phase2_report_from_artifacts(
+    phase2_dir: str | Path,
+    *,
+    output_path: str | Path | None = None,
+) -> Path:
+    """Regenerate Phase-II prose without recomputing any scientific table."""
+    root = Path(phase2_dir).resolve()
+    metadata = json.loads((root / "metadata.json").read_text())
+    gate = json.loads((root / "reproduction_gate.json").read_text())
+    mass_intervals = pd.read_parquet(root / "predictive_mass_intervals.parquet")
+    null_summary = pd.read_parquet(root / "random_null_summary.parquet")
+    nonmonotonic = pd.read_parquet(root / "nonmonotonicity_intervals.parquet")
+    bridge = pd.read_parquet(root / "phase1_phase2_bridge.parquet")
+    external_compute = _external_compute_metrics(root)
+    report = _render_report(
+        root,
+        metadata,
+        gate,
+        mass_intervals,
+        null_summary,
+        nonmonotonic,
+        bridge,
+        external_compute,
+    )
+    destination = (
+        Path(output_path)
+        if output_path is not None
+        else root / "REPORT_EXPERIMENT_01_PHASE2.md"
+    )
+    atomic_write_text(destination, report)
+    return destination
 
 
 def summarize_and_report_phase2(
@@ -853,17 +1047,35 @@ def summarize_and_report_phase2(
         external_compute,
     )
     report_path = root / "REPORT_EXPERIMENT_01_PHASE2.md"
-    report_path.write_text(report, encoding="utf-8")
+    atomic_write_text(report_path, report)
+
+    k_50gap, k_nonrobust, _ = _bridge_thresholds(bridge)
+    phase1_outcomes = sorted(
+        bridge["phase1_outcome_unchanged"].dropna().unique().tolist()
+    )
+    if len(phase1_outcomes) != 1:
+        raise ExperimentIntegrityError("Phase-I outcome differs within bridge")
+    phase3_summary_path = root.parent / "phase3_reduced" / "summary.json"
+    phase3_r_complete = False
+    if phase3_summary_path.is_file():
+        phase3_r_complete = (
+            json.loads(phase3_summary_path.read_text()).get("status") == "complete"
+        )
 
     summary = {
         "schema_name": "thesis.experiment01.phase2_summary",
         "schema_version": 1,
         "status": "complete",
-        "phase1_technical_outcome_unchanged": "A1",
+        "phase1_technical_outcome_unchanged": str(phase1_outcomes[0]),
         "phase1_modified": False,
-        "phase3_started": False,
-        "historical_reproduction_gate_passed": True,
-        "full_rank_phase1_parity_passed": True,
+        "phase3_r_complete_at_report_generation": phase3_r_complete,
+        "historical_reproduction_gate_passed": bool(gate.get("passed")),
+        "full_rank_phase1_parity_passed": bool(
+            all(
+                row.get("passed") is True
+                for row in metadata["phase1_full_rank_min_norm_parity"]
+            )
+        ),
         "failure_count": len(failures),
         "compute": external_compute,
         "nonmonotonicity_directional_last_status": _nonmonotonic_status(
@@ -929,6 +1141,10 @@ def summarize_and_report_phase2(
                     "mean": float(row.mean),
                     "lower": float(row.lower),
                     "upper": float(row.upper),
+                    "dimension_matched": False,
+                    "first_band_dimension": 16,
+                    "second_band_dimension": 32,
+                    "interpretation": "legacy_interval_only",
                     "supports_33_64_more_informative": bool(
                         row.supports_33_64_more_informative
                     ),
@@ -939,8 +1155,8 @@ def summarize_and_report_phase2(
                 ].sort_values(["metric", "branch"]).itertuples()
             ],
             "whitening_bridge": {
-                "k_50gap": 128,
-                "k_nonrobust": 508,
+                "k_50gap": k_50gap,
+                "k_nonrobust": k_nonrobust,
                 "phase1_refit": False,
                 "interpretation": "descriptive_spectral_mechanism_not_causal_proof",
             },
@@ -1008,13 +1224,18 @@ def write_phase2_manifest(phase2_dir: str | Path) -> Mapping[str, object]:
                 "size_bytes": path.stat().st_size,
             }
         )
+    phase2_summary = json.loads((root / "summary.json").read_text(encoding="utf-8"))
+    phase1_outcome = phase2_summary.get(
+        "phase1_technical_outcome_unchanged", "unavailable"
+    )
     payload = {
         "schema_name": "thesis.experiment01.phase2_manifest",
         "schema_version": 1,
         "status": "complete",
         "phase1_modified": False,
-        "phase1_outcome_unchanged": "A1",
-        "phase3_started": False,
+        "phase1_outcome_unchanged": phase1_outcome,
+        "subsequent_phase_started_during_phase2": False,
+        "subsequent_phase_status_scope": "phase2_execution_time",
         "artifacts": records,
         "source_files": source_records,
     }

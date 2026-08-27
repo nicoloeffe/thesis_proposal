@@ -1,21 +1,32 @@
 # Report — Experiment 01 Phase I
 
-## Primary result: directional specificity across three distinct diagnostics
+## Primary scientific result: specificity across three diagnostics
 
-The primary result is not the taxonomy label. It is the convergence of three
-distinct specificity diagnostics:
+The Phase-I result supports the following restricted statement: conditional on
+the frozen representations and a newly fitted reader, the supervised
+representation is more accessible at low reader-label budgets. It does not
+establish that supervised pretraining is intrinsically more label-efficient
+end to end, because the supervised encoder saw directional and volatility
+labels during pretraining.
 
-1. **Established directional spectral anti-alignment.** At `m/D=1/32`, the
-   horizon-JEPA final readout recovers `0.0050` of its full linear directional
-   score, below the `0.0563` empirical random-subspace null. Supervised recovers
-   `0.8971`, compared with its `0.6118` null. This establishes variance–task
-   anti-alignment rather than a generic absence of predictive content.
-2. **Established directional pooling fragility.** Under `last → meanK`, the
-   production full-budget linear directional R² changes from `0.2199` to
-   `0.0701` for horizon-JEPA, while supervised remains approximately stable
-   (`0.3853 → 0.3941`). This is a readout interaction, not a second A/B/D
-   outcome.
-3. **Phase-I finite-sample specificity.** The mean normalized gaps are:
+### Directional spectral organization
+
+Phase II places only `0.000094` of horizon-JEPA's directional predictive mass in its first 8 PCs, versus `0.751775` for supervised. The fraction of Haar draws beating top-PCA averages `1.000` for horizon-JEPA and `0.000` for supervised across the recorded encoder seeds.
+
+When present, these values come from the completed Phase-II machine summary,
+not from literals copied from the older post-P0 PCA ladder. They are diagnostic
+evidence and do not alter Phase I.
+
+### Pooling interaction
+
+At full budget, changing `last_concat512 → meanK_concatS` changes directional test R² from `0.219943` to `0.070085` for horizon-JEPA and from `0.385349` to `0.394098` for supervised.
+
+This matched readout contrast is reported as an interaction with pooling, not
+as an additional A/B/D outcome.
+
+### Finite-sample specificity
+
+The normalized-gap point summaries are:
 
 | target block | mean normalized finite-sample gap | directional / control |
 | --- | --- | --- |
@@ -23,49 +34,36 @@ distinct specificity diagnostics:
 | volatility | 0.1838 | 2.97× |
 | timing | 0.1528 | 3.57× |
 
-The directional penalty is therefore approximately **3–3.5 times larger**
-than the controls (exact ratios `2.97×` versus volatility and `3.57×` versus
-timing). Volatility and timing remain specificity controls and are not pooled
-into the directional result.
+The descriptive directional/control ratios are `2.97×` and `3.57×`. They are point summaries, not an independence-adjusted specificity test. Volatility and timing remain separate controls. These
+ratios alone do not establish an interaction because target families are
+correlated and grouped stock-day uncertainty has not yet been computed.
 
-## Three effects that must remain separate
+## Phase-I effects kept separate
 
-### Robust operational linear ceiling gap
+### Operational linear ceiling gap
 
-At full production budget with tuned raw ridge, the supervised minus
-horizon-JEPA directional R² gap is `0.165405`, with hierarchical
-95% interval `[0.160753, 0.168857]`. The interval
-excludes zero. This is a robust operational linear ceiling gap; it is not, by
-itself, a normalized sample-efficiency statement.
+The supervised-minus-horizon operational ceiling gap is `0.165405` with computational-robustness interval `[0.160753, 0.168857]`. The interval excludes zero. When available, this is an operational linear ceiling
+statement, not a normalized sample-efficiency statement.
 
-### Robust normalized-recovery gap
+### Normalized-recovery gap
 
-After target-wise normalization by each representation's eligible operational
-ceiling, the directional finite-sample gap remains robust across adjacent low
-budgets. The mean over all six preregistered low budgets is
-`0.546020`; the mean over the decisive `0.125` and `0.25`
-days/stock cells is `0.700972`.
+Recovery is normalized target-wise by each representation's eligible
+operational ceiling. The mean normalized directional gap over the frozen low-budget grid is `0.546020`; over the recorded decisive budgets `0.125`, `0.25` it is `0.700972`. The frozen summary records the adjacent robust pairs as
+`0.125→0.25`, `0.25→0.5`, `0.5→1`, `1→2`, `2→4`.
 
 ### Mediation by progressive whitening
 
-The unchanged technical thresholds are `k_50gap = 128` and
-`k_nonrobust = 508`. Partial whitening at `k=128` reduces
-the decisive-budget normalized gap by `55.6%` but does not
-eliminate it: the gap remains robust. Non-robustness requires `k=508`, i.e.
-near-complete whitening of a 512-dimensional readout. The evidence therefore
-does **not** justify saying that the problem is concentrated in a few leading
-principal components.
+At `k_50gap=128`, whitening reduces the decisive-budget gap by `55.6%` but does not eliminate it. Non-robustness first appears at `k_nonrobust=508`; this is the maximum tested valid whitening depth. This pattern does not support concentration in only a few leading PCs.
 
-## Secondary technical classification
+## Secondary frozen preregistered classification
 
-The preregistered taxonomy is retained unchanged as a secondary technical
-classification: **A1 with a robust ceiling gap**.
+The frozen Phase-I technical classification is **A1**.
+Technical rule satisfied: Native finite-sample gap is robust at adjacent low budgets and progressive whitening reduces it by at least 50% and makes it non-robust. The result rows,
+thresholds and classification logic have not been modified. The operational
+ceiling result is stated separately as **A1 with a robust
+ceiling gap**; `B` is not a coexisting outcome.
 
-Technical rule satisfied: Native finite-sample gap is robust at adjacent low budgets and progressive whitening reduces it by at least 50% and makes it non-robust. The robust ceiling gap
-above is reported alongside A1; `B` is not described as a coexisting outcome.
-
-The complete unchanged machine-readable classification record remains in
-`summary/summary.json` and is reproduced here for auditability:
+The complete machine-readable record is reproduced for auditability:
 
 ```json
 {
@@ -191,11 +189,34 @@ The complete unchanged machine-readable classification record remains in
 }
 ```
 
+## Raw and normalized metrics at decisive budgets
+
+The table co-reports raw test R², operational ceiling and normalized recovery.
+Ranges are over the eligible target/encoder/subsample cells represented in the
+frozen result table; they are not population intervals.
+
+| block | budget | branch | raw R² mean / median | ceiling mean [range] | recovery mean / median [range] | eligible targets min–max | negative raw fraction |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| directional | 0.125 | jepa_horizon | 0.0261 / 0.0222 | 0.2199 [0.0654, 0.3738] | 0.1447 / 0.1652 [-0.5340, 0.4060] | 12–12 | 0.131 |
+| directional | 0.125 | supervised | 0.3319 / 0.3235 | 0.3853 [0.2736, 0.4658] | 0.8544 / 0.8518 [0.5903, 0.9708] | 12–12 | 0.000 |
+| directional | 0.25 | jepa_horizon | 0.0382 / 0.0338 | 0.2199 [0.0654, 0.3738] | 0.1928 / 0.1960 [-0.2847, 0.5105] | 12–12 | 0.047 |
+| directional | 0.25 | supervised | 0.3430 / 0.3321 | 0.3853 [0.2736, 0.4658] | 0.8851 / 0.8821 [0.6736, 0.9764] | 12–12 | 0.000 |
+| timing | 0.125 | jepa_horizon | 0.3525 / 0.3766 | 0.5430 [0.5408, 0.5444] | 0.6491 / 0.6944 [0.1970, 0.8020] | 1–1 | 0.000 |
+| timing | 0.125 | supervised | 0.4893 / 0.5049 | 0.6064 [0.6056, 0.6076] | 0.8068 / 0.8328 [0.4913, 0.8766] | 1–1 | 0.000 |
+| timing | 0.25 | jepa_horizon | 0.3695 / 0.3881 | 0.5430 [0.5408, 0.5444] | 0.6804 / 0.7132 [0.2203, 0.8001] | 1–1 | 0.000 |
+| timing | 0.25 | supervised | 0.4929 / 0.5154 | 0.6064 [0.6056, 0.6076] | 0.8129 / 0.8501 [0.4932, 0.9166] | 1–1 | 0.000 |
+| volatility | 0.125 | jepa_horizon | 0.2344 / 0.2532 | 0.4940 [0.4358, 0.5518] | 0.4723 / 0.5416 [-0.0521, 0.7152] | 2–2 | 0.050 |
+| volatility | 0.125 | supervised | 0.3970 / 0.4149 | 0.5166 [0.4614, 0.5715] | 0.7702 / 0.8213 [0.4668, 0.9238] | 2–2 | 0.000 |
+| volatility | 0.25 | jepa_horizon | 0.2672 / 0.2759 | 0.4940 [0.4358, 0.5518] | 0.5404 / 0.5991 [0.2119, 0.8058] | 2–2 | 0.000 |
+| volatility | 0.25 | supervised | 0.4118 / 0.4169 | 0.5166 [0.4614, 0.5715] | 0.7987 / 0.8371 [0.5092, 0.9487] | 2–2 | 0.000 |
+
+The machine-readable version is `16_critical_budget_metrics.parquet`.
+
 ## Whitening-depth non-monotonicity diagnostic
 
 This added diagnostic uses only frozen Phase-I recovery points. Within each
 encoder/subsample cell, it first averages the paired supervised–horizon gap
-over the two decisive budgets (`0.125`, `0.25`), then applies 5,000-draw
+over the decisive budgets (`0.125`, `0.25`), then applies 5,000-draw
 hierarchical resampling of encoder seeds followed by paired cells within
 encoder. It does not refit a reader and is not outcome-defining.
 
@@ -246,34 +267,20 @@ Differences are `gap(to k) − gap(from k)`, paired by encoder seed and subsampl
 | volatility | 1 | 0.2787 | 0.2372 | 0.2518 | 0.3024 |
 | volatility | 2 | 0.2376 | 0.2359 | 0.2511 | 0.2982 |
 
-For direction, `8→16` is indistinguishable from zero, `16→32` shows a small
-positive paired change, and `32→64` a larger negative paired change; the latter
-two intervals exclude zero. Volatility and timing show different local
-patterns. This verifies local non-monotonicity in the inspected cells, but the
-diagnostic is post hoc and does not modify the preregistered interpretation or
-support a “few-PC” account. Full paired values per encoder are retained in the
-four `15_whitening_nonmonotonicity_*` artifacts.
+`8→16` has a positive point change of `0.0008` and its interval includes zero; `16→32` has a positive point change of `0.0180` and its interval excludes zero; `32→64` has a negative point change of `-0.1131` and its interval excludes zero. The alternating point-estimate signs establish local non-monotonicity in the inspected grid. This diagnostic is post hoc and does not modify the
+preregistered interpretation. Full paired values per encoder are retained in
+the `15_whitening_nonmonotonicity_*` artifacts.
 
 ## Global covariance scale and regularization parity
 
-`trace_cov_over_dim` is **not matched**. On `last_concat512`, the mean trace
-scale is `0.360919`
-for horizon-JEPA and
-`0.258515`
-for supervised, a horizon/supervised ratio of
-`1.396`
-(approximately `1.40`). The all-branch max/min ratio is
-`3.306` because masked-JEPA
-has a still larger trace.
+On `last_concat512`, mean `trace_cov_over_dim` is `0.360919` for horizon-JEPA and `0.258515` for supervised, a ratio of `1.396123`. The two traces are not matched within the report's 10% diagnostic tolerance. The all-branch max/min ratio is `3.306248`.
 
 Scientific common-regularization comparisons use the dimensionless parameter
 
 `lambda = alpha * trace(covariance) / D`.
 
-Figure 06 is verified to select `reader_family = ridge_raw_common_alpha` and
-therefore compares **common alpha**, not common absolute lambda. No
-fixed-absolute-lambda comparison is included in this report; with unmatched
-trace scale, such a comparison would be marked confounded.
+Figure 06 passed its source audit: every plotted cell comes from `ridge_raw_common_alpha`, and its axis is dimensionless alpha rather than absolute lambda. No fixed-absolute-lambda comparison is included; when trace
+scales differ, such a comparison is confounded.
 
 ```json
 {
@@ -313,8 +320,7 @@ This is the mandatory old-split min-norm OLS reproduction check:
 | jepa_horizon | 0.211129 | 0.2111 | 0.000029 | true |
 | supervised | 0.375636 | 0.3756 | 0.000036 | true |
 
-The observed values reproduce the historical rounded references within the
-frozen tolerance.
+The historical reproduction gate is available and passed.
 
 ### Production full-budget test
 
@@ -340,6 +346,22 @@ two chronological halves of the former held-out stock-days.
 - the fixed complete test split is evaluated only after configuration fixing;
 - directional, volatility and timing are summarized separately;
 - normalized recovery is target-wise and only uses full-budget R² at least 0.01.
+
+The smallest observed fractional-budget `n/D` is `6.951`, so the original grid does not enter the `n/D < 1` regime.
+
+## External-validity limits
+
+- The dataset contains seven stocks from one market/domain.
+- The historical split is stock-day-group-disjoint but not globally
+  chronological; the same calendar date may occur on different split sides for
+  different stocks.
+- Validation and test are chronological halves of a historically explored
+  held-out set, so the new test is not a pristine external confirmation set.
+- Fractional budgets vary within-day endpoint coverage while retaining seven
+  stock-day groups.
+- Supervised pretraining used directional and volatility labels later probed by
+  Experiment 01; timing was not a direct training target but may be correlated
+  with those labels.
 
 ## Specificity and time-of-day controls
 
@@ -382,7 +404,9 @@ These sensitivity cells are not pooled into the random-anchor curves.
 ## Uncertainty
 
 Intervals use hierarchical resampling of encoder seeds followed by subsampling
-seeds within encoder. Companion Parquet tables expose
+seeds within encoder. They are **computational-robustness intervals**, not
+population-generalization confidence intervals. Grouped stock/day uncertainty
+and leave-one-stock-out sensitivity remain pending. Companion tables expose
 `sd_subsample_within_encoder` and `sd_encoder_between_means`; all
 encoder-specific curves are retained in figure 10.
 
@@ -403,11 +427,12 @@ encoder-specific curves are retained in figure 10.
 - `14_ceiling_eligibility_map.png`
 - `06_common_alpha_audit.json`
 - `15_whitening_nonmonotonicity_manifest.json`
+- `16_critical_budget_metrics.parquet`
 - `15_whitening_nonmonotonicity_intervals.parquet`
 - `15_whitening_nonmonotonicity_paired_differences.parquet`
 - `15_whitening_nonmonotonicity_by_encoder.parquet`
 - `15_whitening_nonmonotonicity_paired_by_encoder.parquet`
 
-Phase II (PCA/random subspaces) and Phase III (MLP) were not run. This revision
-changes narrative ordering and adds read-only diagnostics only; it does not
-change Phase-I results, thresholds, the technical outcome, or the fit pipeline.
+Phase II status: `complete`; Phase III-R status: `complete`. These later diagnostics do not change the frozen Phase-I outcome. This revision changes narrative and read-only report
+diagnostics only; it does not change Phase-I results, thresholds, the technical
+outcome or the fit pipeline.

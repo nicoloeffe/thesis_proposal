@@ -1127,4 +1127,90 @@ def test_phase1_streaming_smoke_writes_finalized_artifacts(tmp_path):
         out / "results.parquet", out / "summary", out / "report"
     )
     assert report["outcome"]["outcome"] == "D"
-    assert (out / "report" / "REPORT_EXPERIMENT_01.md").is_file()
+    report_path = out / "report" / "REPORT_EXPERIMENT_01.md"
+    assert report_path.is_file()
+    initial_text = report_path.read_text()
+    assert "Phase II status: `not_present`" in initial_text
+    assert "Phase II (PCA/random subspaces) and Phase III (MLP) were not run" not in initial_text
+    assert initial_text.index("## Primary scientific result") < initial_text.index(
+        "## Secondary frozen preregistered classification"
+    )
+    narrative_text = (
+        out / "report" / "SUMMARY_NARRATIVE_EXPERIMENT_01.md"
+    ).read_text()
+    assert narrative_text.index("## Primary scientific result") < narrative_text.index(
+        "## Secondary frozen technical classification"
+    )
+    claim_table = pd.read_parquet(out / "report" / "17_claim_table.parquet")
+    assert not claim_table["source_artifact"].str.startswith("/").any()
+    report_manifest = json.loads(
+        (out / "report" / "report_manifest.json").read_text()
+    )
+    assert all(
+        not record["path"].startswith("/")
+        for record in report_manifest["protected_inputs"].values()
+    )
+
+    # Report prose is artifact-derived: changing the machine summary changes
+    # the corresponding numbers, budget names, thresholds and interval claim.
+    summary_path = out / "summary" / "summary.json"
+    mutated = json.loads(summary_path.read_text())
+    mutated["target_block_gap_signatures"]["directional"][
+        "low_budget_mean_normalized_gap"
+    ] = 0.123456
+    outcome = mutated["directional_last_concat512_outcome"]
+    outcome["absolute_ceiling_gap"] = {
+        "mean": 0.02,
+        "lower": -0.03,
+        "upper": 0.07,
+        "robust": False,
+    }
+    outcome["decisive_budgets"] = [1.0, 2.0]
+    outcome["native_low_budget_mean_gap"] = 0.234567
+    outcome["k_50gap"] = 7
+    outcome["k_nonrobust"] = 9
+    outcome["whitening_candidates"] = [
+        {
+            "k": 7,
+            "mean_gap": 0.09,
+            "reduction_fraction": 0.6,
+            "all_robust": True,
+            "all_nonrobust": False,
+        },
+        {
+            "k": 9,
+            "mean_gap": 0.01,
+            "reduction_fraction": 0.9,
+            "all_robust": False,
+            "all_nonrobust": True,
+        },
+    ]
+    summary_path.write_text(json.dumps(mutated))
+    generate_phase1_report(
+        out / "results.parquet", out / "summary", out / "report"
+    )
+    mutated_text = report_path.read_text()
+    assert "`0.123456`" in mutated_text
+    assert "`1`, `2`" in mutated_text
+    assert "`k_50gap=7`" in mutated_text
+    assert "`k_nonrobust=9`" in mutated_text
+    assert "The interval includes zero." in mutated_text
+    assert "k_50gap=128" not in mutated_text
+
+    mutated["directional_last_concat512_outcome"]["absolute_ceiling_gap"] = {
+        "mean": 0.04,
+        "lower": 0.01,
+        "upper": 0.08,
+        "robust": True,
+    }
+    summary_path.write_text(json.dumps(mutated))
+    generate_phase1_report(
+        out / "results.parquet", out / "summary", out / "report"
+    )
+    assert "The interval excludes zero." in report_path.read_text()
+
+    summary_path.unlink()
+    with pytest.raises(ValueError, match="cannot read Phase-I technical summary"):
+        generate_phase1_report(
+            out / "results.parquet", out / "summary", out / "report"
+        )

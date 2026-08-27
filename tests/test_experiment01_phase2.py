@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 from experiment01.linear import (
     evaluate,
@@ -22,6 +23,7 @@ from experiment01.phase2 import (
     spectral_bands,
 )
 from experiment01.schema import FeatureSet, InputBundle, TargetDefinition
+from experiment01.phase2_reporting import _nonmonotonic_status
 
 
 def _minimal_bundle(tmp_path: Path, feature: FeatureSet) -> InputBundle:
@@ -186,3 +188,22 @@ def test_full_rank_haar_cell_is_treated_as_exact_subspace_tie(tmp_path):
     full = null[null["subspace_dimension"].eq(4)]
     assert full["top_pca_percentile"].eq(100.0).all()
     assert full["empirical_p_random_exceeds_top"].eq(0.0).all()
+
+
+def test_unequal_width_band_difference_is_never_promoted_to_matched_evidence():
+    misleadingly_positive = pd.DataFrame(
+        {
+            "readout": ["last_concat512", "last_concat512"],
+            "target_block": ["directional", "directional"],
+            "metric": [
+                "predictive_mass_fraction_33_64_minus_17_32",
+                "predictive_mass_fraction_33_64_minus_17_32",
+            ],
+            "branch": ["supervised", "jepa_horizon"],
+            "supports_33_64_more_informative": [True, True],
+        }
+    )
+    status = _nonmonotonic_status(misleadingly_positive)
+    assert status.startswith("not_dimension_matched")
+    assert "16 directions" in status
+    assert "32" in status

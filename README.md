@@ -129,10 +129,13 @@ The three diagnostic phases answer complementary questions:
    `meanK_concatS`; supervised remains approximately stable
    (`0.3853` to `0.3941`).
 
-6. **A nonlinear reader recovers content but does not erase relative
-   difficulty.** Phase III-R is classified `R3`: the MLP raises the
-   horizon-JEPA ceiling, including to `0.9119` of supervised after full
-   whitening, while the low-budget relative gap persists.
+6. **A nonlinear reader recovers content, while the selected low-budget MLP
+   remains unstable.** Phase III-R is technically classified `R3`: the frozen
+   MLP protocol raises the horizon-JEPA full-budget ceiling, including to
+   `0.9119` of supervised after full whitening, but its low-budget raw
+   directional R² is often negative. The resulting normalized gaps are
+   reader-specific diagnostics, not evidence for a general nonlinear
+   accessibility law.
 
 ![Predictive mass across the covariance spectrum](docs/results/phase2/figures/01_predictive_mass.png)
 
@@ -145,7 +148,10 @@ information loss in the information-theoretic sense, prove that whitening is a
 causal intervention on the encoder, or show that self-supervision generally
 produces this geometry. The empirical system is one LOB dataset and the claims
 are conditional on the frozen architectures, objectives, readouts and target
-family.
+family. The fixed all-ones token-role projection is an established operational
+contrast. The completed dimension-matched structured role-Haar diagnostic did
+not find the all-ones direction or its complement exceptional across all three
+encoder seeds, so no privileged Hadamard/relational mechanism is inferred.
 
 The broader mathematical framing and proposed follow-up programme are in
 [Geometry and Accessibility of Predictive Information](docs/research/RESEARCH_NOTE_GEOMETRY_ACCESSIBILITY.md).
@@ -155,8 +161,19 @@ The broader mathematical framing and proposed follow-up programme are in
 - [Phase I — finite-sample accessibility](docs/results/phase1/REPORT_EXPERIMENT_01.md)
 - [Phase II — spectral localization](docs/results/phase2/REPORT_EXPERIMENT_01_PHASE2.md)
 - [Phase III-R — reader-relative accessibility](docs/results/phase3r/REPORT_EXPERIMENT_01_PHASE3.md)
+- [T2 — token-role matched-null diagnostic](docs/results/token_role/REPORT_EXPERIMENT_01_TOKEN_ROLE.md)
+- [F16 — label-matched supervised dose response](docs/results/f16/REPORT_EXPERIMENT_01_F16.md)
+- [Training protocol and nine-checkpoint audit](docs/experiment01/TRAINING_PROTOCOL.md)
+- [F16 label-matched dose-response preregistration](docs/experiment01/SPEC_EXPERIMENT_01_F16_LABEL_MATCHED.md)
 - [Frozen Experiment 01 specification](docs/experiment01/SPEC_EXPERIMENT_01_SAMPLE_EFFICIENCY_20260730.md)
 - [Current project state](PROJECT_STATE.md)
+
+F16 is complete under its frozen protocol. All 12 supervised training cells
+finished without failure; checkpoint and alpha selections were frozen before
+the one-time fixed-test evaluation. Label-matched accessibility changes
+smoothly with supervision volume, while role retention and top-k predictive
+mass do not show the same all-seed monotonicity. The Phase-I outcome remains
+unchanged.
 
 The lightweight publication package in [`docs/results/`](docs/results/README.md)
 contains reports, figures and metadata with a tracked checksum inventory.
@@ -164,7 +181,7 @@ contains reports, figures and metadata with a tracked checksum inventory.
 ## Repository structure
 
 ```text
-experiment01/            Phase I–III and diagnostic implementation
+experiment01/            Phase I–III, T2 and completed F16 implementation
 experiment01/reference/  frozen equivalence and reproduction gates
 models/                   shared encoder architecture
 training/                 canonical encoder training entrypoints

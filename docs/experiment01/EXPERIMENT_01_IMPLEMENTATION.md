@@ -2,7 +2,12 @@
 
 This document describes the implementation of
 [`SPEC_EXPERIMENT_01_SAMPLE_EFFICIENCY_20260730.md`](SPEC_EXPERIMENT_01_SAMPLE_EFFICIENCY_20260730.md)
-version 2.0.
+version 2.0. Phase III is additionally governed by the later definitive
+[`SPEC_EXPERIMENT_01_PHASE3_READER_ACCESSIBILITY_20260801.md`](SPEC_EXPERIMENT_01_PHASE3_READER_ACCESSIBILITY_20260801.md),
+SHA-256
+`78ca15821ac40355c35e5f40ecaf5086f5e6bbb6f339255a85b13fc7d952a151`.
+That later document replaces the eligibility rule in the earlier optional MLP
+section, so the executed Phase-III `b_1_4` floor is protocol-eligible.
 
 ## Current status
 
@@ -24,7 +29,16 @@ version 2.0.
   before production-test access because it was computationally disproportionate;
 - compute-feasible Phase-III-R: complete with frozen outcome `R3`, Phase-I
   technical outcome unchanged;
-- active software verification: 157 tests passed.
+- T2 token-role matched-null diagnostic: complete, no privileged Hadamard axis;
+- F16 checkpoint/training audit: complete and fail-closed;
+- F16 target-blind cohort convergence: complete, cap 128 selected on 504/504
+  passing cells without test-target or test-feature access;
+- F16 production: complete, 12/12 training cells, 0 failures, 24 frozen
+  best/epoch-20 checkpoints and 33/33 validation sufficient-statistic caches;
+- F16 fixed test, grouped uncertainty, summary and report: complete; no
+  selection changed after the one-time unlock;
+- active software verification: 187 tests passed after F16 additions (one
+  harmless empty-legend warning in a synthetic Phase-I plotting smoke test).
 
 The authoritative current overview is
 [`PROJECT_STATE.md`](../../PROJECT_STATE.md). This implementation contract
@@ -59,6 +73,11 @@ experiment01/
   reporting.py             Phase-I figures and Markdown report
   reproduction.py          read-only validation and OLS reproduction gate
   phase2_reproduction.py   frozen PCA-ladder reproduction gate
+  training_audit.py       nine-checkpoint protocol and row-identity audit
+  f16.py                  frozen label/cohort row manifests and test barrier
+  f16_convergence.py      validation-only cap-selection gate
+  f16_training.py         deterministic resumable supervised training
+  f16_planning.py         post-pilot inventory and compute/storage bounds
   reference/               frozen extraction and ladder equivalence stack
 
 tests/test_experiment01.py synthetic compliance/regression tests

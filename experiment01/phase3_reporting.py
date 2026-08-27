@@ -14,7 +14,12 @@ import numpy as np
 import pandas as pd
 
 from .errors import ExperimentIntegrityError
-from .io import atomic_write_json, atomic_write_parquet, sha256_file
+from .io import (
+    atomic_write_json,
+    atomic_write_parquet,
+    atomic_write_text,
+    sha256_file,
+)
 from .phase3 import (
     BOOTSTRAP_DRAWS,
     BOOTSTRAP_SEED,
@@ -1318,8 +1323,26 @@ def _format_num(value: Any, digits: int = 4) -> str:
     return "NA" if not np.isfinite(number) else f"{number:.{digits}f}"
 
 
-def write_phase3_reports(phase3_dir: str | Path) -> dict[str, str]:
+def _report_markdown_table(
+    rows: Sequence[Mapping[str, object]], columns: Sequence[str]
+) -> str:
+    lines = [
+        "| " + " | ".join(columns) + " |",
+        "| " + " | ".join("---" for _ in columns) + " |",
+    ]
+    lines.extend(
+        "| " + " | ".join(str(row.get(column, "")) for column in columns) + " |"
+        for row in rows
+    )
+    return "\n".join(lines)
+
+
+def write_phase3_reports(
+    phase3_dir: str | Path, *, output_dir: str | Path | None = None
+) -> dict[str, str]:
     root = Path(phase3_dir)
+    report_root = Path(output_dir) if output_dir is not None else root
+    report_root.mkdir(parents=True, exist_ok=True)
     reduced = _is_reduced_phase3(root)
     summary = json.loads((root / "summary.json").read_text())
     outcome = summary["outcome"]
@@ -1328,9 +1351,160 @@ def write_phase3_reports(phase3_dir: str | Path) -> dict[str, str]:
     outcome_text = {
         "R1": "predominantly reader-class-mediated accessibility",
         "R2": "conditioning-mediated accessibility persists for MLP",
-        "R3": "persistent difficulty beyond linearity and second-order conditioning",
+        "R3": "the frozen gap criterion persists for the selected MLP after whitening",
         "R4": "mixed or indeterminate reader result",
     }[result]
+    protocol_path = root / "protocol_frozen.json"
+    protocol = json.loads(protocol_path.read_text())
+    if protocol.get("status") != "frozen_pre_test":
+        raise ExperimentIntegrityError("Phase-III protocol is not frozen pre-test")
+    protocol_inventory = protocol["inventory"]
+    reader_protocol = protocol["reader"]
+    phase1_outcome = str(outcome["phase1_outcome_unchanged"])
+    selection_inventory = pd.read_parquet(root / "selection_job_inventory.parquet")
+    evaluation_inventory = pd.read_parquet(root / "evaluation_job_inventory.parquet")
+    family_counts = (
+        pd.concat([selection_inventory, evaluation_inventory])
+        .groupby("job_family", observed=True)
+        .size()
+        .to_dict()
+    )
+    if sum(family_counts.values()) != int(protocol_inventory["total_models"]):
+        raise ExperimentIntegrityError("Phase-III protocol/model inventory differs")
+    primary_evaluation = evaluation_inventory.loc[
+        evaluation_inventory["job_family"].eq("primary_directional")
+    ]
+    primary_low_budget_count = len(requirements["analyzed_low_budget_labels"])
+    primary_branch_count = int(primary_evaluation["branch"].nunique())
+    primary_encoder_seed_count = int(primary_evaluation["encoder_seed"].nunique())
+    primary_subset_seed_count = int(
+        primary_evaluation.loc[
+            primary_evaluation["subsample_seed"].ge(0), "subsample_seed"
+        ].nunique()
+    )
+    primary_reader_seed_count = int(primary_evaluation["reader_seed"].nunique())
+    termination = json.loads((root / "PHASE3_V1_TERMINATION_RECORD.json").read_text())
+    historical_gate = json.loads((root / "historical_mlp_gate.json").read_text())
+    if historical_gate.get("status") != "pass":
+        raise ExperimentIntegrityError("historical Phase-III MLP gate did not pass")
+    historical_tolerances = sorted(
+        {float(row["absolute_tolerance"]) for row in historical_gate["summaries"]}
+    )
+    if len(historical_tolerances) != 1:
+        raise ExperimentIntegrityError("historical MLP tolerances differ")
+
+    phase3_results = pd.read_parquet(root / "phase3_results.parquet")
+    report_cells = phase3_results.loc[
+        phase3_results["job_family"].isin(
+            ["primary_directional", "specificity_control"]
+        )
+        & (phase3_results["width"] == 256)
+        & (phase3_results["spectral_arm"] == "none")
+        & phase3_results["budget_label"].isin(
+            sorted(
+                set(requirements["analyzed_low_budget_labels"])
+                | set(protocol["controls"]["budget_labels"])
+            )
+        )
+    ]
+    report_metric_rows = []
+    report_table_rows = []
+    metric_keys = [
+        "target_block",
+        "budget_label",
+        "branch",
+        "transform",
+    ]
+    for key, cell in report_cells.groupby(metric_keys, observed=True):
+        block, budget, branch, transform = key
+        eligible = cell.loc[cell["ceiling_eligible"].eq(True)]
+        if eligible.empty:
+            continue
+        raw = cell["test_r2"].to_numpy(dtype=float)
+        normalized = eligible["normalized_recovery"].to_numpy(dtype=float)
+        ceilings = (
+            eligible[
+                ["encoder_seed", "target_name", "full_budget_ceiling"]
+            ]
+            .drop_duplicates()["full_budget_ceiling"]
+            .to_numpy(dtype=float)
+        )
+        if not (
+            np.isfinite(raw).all()
+            and np.isfinite(normalized).all()
+            and np.isfinite(ceilings).all()
+        ):
+            raise ExperimentIntegrityError("Phase-III report metrics are non-finite")
+        record = {
+            "target_block": str(block),
+            "budget_label": str(budget),
+            "branch": str(branch),
+            "transform": str(transform),
+            "raw_test_r2_mean": float(raw.mean()),
+            "raw_test_r2_median": float(np.median(raw)),
+            "raw_test_r2_min": float(raw.min()),
+            "raw_test_r2_max": float(raw.max()),
+            "negative_raw_test_r2_fraction": float(np.mean(raw < 0.0)),
+            "normalized_recovery_mean": float(normalized.mean()),
+            "normalized_recovery_median": float(np.median(normalized)),
+            "normalized_recovery_min": float(normalized.min()),
+            "normalized_recovery_max": float(normalized.max()),
+            "full_budget_ceiling_mean": float(ceilings.mean()),
+            "full_budget_ceiling_min": float(ceilings.min()),
+            "full_budget_ceiling_max": float(ceilings.max()),
+            "eligible_target_count": int(eligible["target_name"].nunique()),
+            "n_result_cells": int(len(cell)),
+        }
+        report_metric_rows.append(record)
+        report_table_rows.append(
+            {
+                "block": block,
+                "budget": budget,
+                "branch": branch,
+                "transform": transform,
+                "raw R² mean/median [range]": (
+                    f"{record['raw_test_r2_mean']:.3f}/"
+                    f"{record['raw_test_r2_median']:.3f} "
+                    f"[{record['raw_test_r2_min']:.3f}, "
+                    f"{record['raw_test_r2_max']:.3f}]"
+                ),
+                "recovery mean/median [range]": (
+                    f"{record['normalized_recovery_mean']:.3f}/"
+                    f"{record['normalized_recovery_median']:.3f} "
+                    f"[{record['normalized_recovery_min']:.3f}, "
+                    f"{record['normalized_recovery_max']:.3f}]"
+                ),
+                "ceiling mean [range]": (
+                    f"{record['full_budget_ceiling_mean']:.3f} "
+                    f"[{record['full_budget_ceiling_min']:.3f}, "
+                    f"{record['full_budget_ceiling_max']:.3f}]"
+                ),
+                "eligible": record["eligible_target_count"],
+                "negative raw fraction": (
+                    f"{record['negative_raw_test_r2_fraction']:.3f}"
+                ),
+            }
+        )
+    report_metrics = pd.DataFrame(report_metric_rows).sort_values(metric_keys)
+    atomic_write_parquet(report_metrics, root / "phase3_report_metrics.parquet")
+    if report_root.resolve() != root.resolve():
+        atomic_write_parquet(
+            report_metrics, report_root / "phase3_report_metrics.parquet"
+        )
+    raw_normalized_table = _report_markdown_table(
+        report_table_rows,
+        [
+            "block",
+            "budget",
+            "branch",
+            "transform",
+            "raw R² mean/median [range]",
+            "recovery mean/median [range]",
+            "ceiling mean [range]",
+            "eligible",
+            "negative raw fraction",
+        ],
+    )
     gap_table = pd.read_parquet(root / "phase3_reader_gap.parquet")
     gap_summary = gap_table.loc[gap_table["table_level"] == "block_summary"]
     specificity = (
@@ -1408,23 +1582,34 @@ def write_phase3_reports(phase3_dir: str | Path) -> dict[str, str]:
     )
     phase_title = "Experiment 01 Phase III-R" if reduced else "Experiment 01 Phase III"
     amendment_section = (
-        """## Compute-feasible preregistered amendment
+        f"""## Compute-feasible preregistered amendment
+
+Phase III is governed by the later definitive specification
+[`SPEC_EXPERIMENT_01_PHASE3_READER_ACCESSIBILITY_20260801.md`](https://github.com/nicoloeffe/thesis_proposal/blob/main/docs/experiment01/SPEC_EXPERIMENT_01_PHASE3_READER_ACCESSIBILITY_20260801.md)
+(SHA-256 `78ca15821ac40355c35e5f40ecaf5086f5e6bbb6f339255a85b13fc7d952a151`).
+It replaces the eligibility rule in the earlier optional MLP section; the
+executed `b_1_4` floor is protocol-eligible.
 
 Phase III v1 was terminated before selection freeze and before any production
-test access because its 21,456-model inventory was computationally
-disproportionate. Phase III-R was frozen before test with 1,296 models: 504
-primary, 576 specificity-control and 216 focused spectral fits. It preserves
-all scientific semantics and outcome thresholds while reducing replication to
-three paired encoder, subset and reader seeds where applicable. The capacity
-sweep and redundant spectral arms are explicitly outside Phase III-R.
+test access with status `{termination['status']}` and
+`{termination['test_inference_claims']}` test-inference claims. The recorded
+reason is: {termination['termination_reason']}. Phase III-R was frozen before
+test with {int(protocol_inventory['total_models'])} models:
+{int(family_counts.get('primary_directional', 0))} primary,
+{int(family_counts.get('specificity_control', 0))} specificity-control and
+{int(family_counts.get('spectral_diagnostic', 0))} focused spectral fits. It
+preserves the frozen outcome thresholds while reducing replication to the
+protocol-recorded paired seeds. The capacity sweep and omitted spectral arms
+remain outside Phase III-R.
 """
         if reduced
         else ""
     )
     spectral_scope_text = (
-        """The focused nonlinear spectral contrast is restricted to
-`jepa_horizon` directional targets: head PCs 1:127, deep PCs 382:508 and the
-full valid rank. Detailed intermediate-band, supervised and timing spectral
+        f"""The focused nonlinear spectral contrast is restricted to
+`{protocol['spectral']['branches'][0]}` directional targets with arms
+`{', '.join(protocol['spectral']['arms'])}`. Detailed intermediate-band,
+supervised and timing spectral
 localization remains the frozen Phase-II result; Phase III-R does not repeat
 it. The MLP does not “recover predictive mass.”"""
         if reduced
@@ -1454,20 +1639,34 @@ Widths 128 and 512 are descriptive sensitivity checks at the preregistered minim
 
 ## Preregistered outcome
 
-The directional `last_concat512` primary outcome is **{result}: {outcome_text}**. Phase-I technical outcome **A1 remains frozen and unchanged**. Phase III changes only the reader-relative diagnosis, not the Phase-I result.
+The directional `last_concat512` primary outcome is **{result}: {outcome_text}**. Phase-I technical outcome **{phase1_outcome} remains frozen and unchanged**. Phase III changes only the reader-relative diagnosis, not the Phase-I result. For R3 specifically, “persists” refers only to the frozen selected MLP family and transforms; it is not a claim about nonlinear readers in general.
 
 The frozen native-ridge low-budget normalized gap is {_format_num(requirements['ridge_native_low_budget_mean_gap'])}. The native-MLP gap is {_format_num(requirements['native_low_budget_mean_gap'])}, giving reader attenuation {_format_num(requirements['reader_attenuation'])}. The full-whitened MLP gap is {_format_num(requirements['full_whitened_low_budget_mean_gap'])}, giving within-MLP whitening attenuation {_format_num(requirements['whitening_attenuation_within_mlp'])}.
 
+The two attenuation quantities above are algebraic outputs of the frozen
+classification rule, not stable effect-size estimates: low-budget raw R² is
+negative in many primary cells. Raw scores and ceiling eligibility therefore
+come before the normalized-gap interpretation.
+
+## Raw and normalized budget metrics
+
+The table below accompanies normalized recovery with the underlying raw test
+R² distribution, operational ceiling range, eligibility count and fraction of
+negative raw scores. It is generated from `phase3_results.parquet` and is also
+serialized as `phase3_report_metrics.parquet`.
+
+{raw_normalized_table}
+
 ## Frozen Phase-I/II facts
 
-- Phase-I `A1` and all Phase-I thresholds/results are unchanged.
+- Phase-I `{phase1_outcome}` and all Phase-I thresholds/results are unchanged.
 - Phase II localized directional signal deeply along the covariance spectrum; predictive mass remains a linear covariance diagnostic.
 - The production bundle, Phase-I subsets, Phase-I transforms, Phase-II caches and canonical checkpoints passed their hash gates.
-- The historical MLP gate reproduced horizon-JEPA and supervised within absolute tolerance 0.015; that historical reader used coordinate-wise standardization and is not the Phase-III primary reader.
+- The historical MLP gate reproduced its recorded branches within absolute tolerance {historical_tolerances[0]:g}; that historical reader used coordinate-wise standardization and is not the Phase-III primary reader.
 
 ## New Phase-III reader result
 
-The primary reader is exactly `Linear(d,256)-GELU-Dropout(0.10)-Linear(256,T)`, with no coordinate-wise native input standardization, BatchNorm or LayerNorm. Weight decay was selected on the fixed validation split. The selection manifest was frozen and hashed before one-shot test inference.
+The primary reader is exactly `{reader_protocol['architecture']}`, with no coordinate-wise native input standardization, BatchNorm or LayerNorm. Weight decay was selected from `{json.dumps(reader_protocol['weight_decay_grid'])}` on the fixed validation split. The selection manifest was frozen and hashed before one-shot test inference.
 
 Encoder-specific native directional gaps are `{json.dumps(requirements['native_encoder_gap_means'], sort_keys=True)}`. Encoder-specific full-whitened gaps are `{json.dumps(requirements['full_whitened_encoder_gap_means'], sort_keys=True)}`. Meaningful-ceiling status is `{requirements['ceilings_meaningful']}`.
 
@@ -1480,6 +1679,11 @@ Phase III separates: (1) the operational full-budget ceiling of each reader, (2)
 Directional, volatility and timing results are reported separately. They are never pooled. Volatility and timing are specificity controls; the preregistered outcome is directional only.
 
 {specificity_lines}
+
+These normalized-gap summaries are descriptive. In particular, values above
+one are differences between normalized recoveries and must not be read as
+“times worse.” A target-block interaction requires grouped stock-day
+uncertainty, which is not present in the current aggregate artifacts.
 
 ## Spectral diagnostics
 
@@ -1499,25 +1703,40 @@ Full-budget MLP ceiling gaps, nonlinear lift over frozen ridge, MLP-to-supervise
 
 ## Limitations and prohibited interpretations
 
-Equal MLP performance would not prove equal information, and a persistent MLP gap would not prove information loss. Full whitening is a post-hoc train-only invertible coordinate transform, not a training-time encoder intervention. No claim is made that VICReg/SIGReg must reproduce it, that top-128 failure proves tail causality, or that these results generalize beyond this domain.
+Equal MLP performance would not prove equal information, and a persistent MLP
+gap does not prove information loss or a general nonlinear-accessibility
+mechanism. Full whitening is a post-hoc train-only invertible coordinate
+transform, not a training-time encoder intervention. No claim is made that
+VICReg/SIGReg must reproduce it or that head-band failure proves tail
+causality.
+
+The existing intervals resample encoder, subset and reader seeds and therefore
+measure computational robustness, not population generalization. Grouped
+stock/day uncertainty and leave-one-stock-out sensitivity remain pending. The
+dataset contains seven stocks from one market/domain; the historical split is
+not globally chronological, validation and test derive from a historically
+explored held-out set, and the test is not a pristine external confirmation
+set. The supervised encoder also saw directional and volatility labels during
+pretraining, so this phase cannot support an end-to-end label-efficiency claim.
 """
     narrative = f"""# {phase_title} — narrative summary
 
-{phase_title} assigns **{result} ({outcome_text})** for the directional `last_concat512` comparison. The low-budget gap changes from {_format_num(requirements['ridge_native_low_budget_mean_gap'])} for the frozen native ridge to {_format_num(requirements['native_low_budget_mean_gap'])} for the native MLP and {_format_num(requirements['full_whitened_low_budget_mean_gap'])} after full train-only whitening. Phase-I **A1 remains unchanged**.
+{phase_title} assigns the frozen technical class **{result} ({outcome_text})** for the directional `last_concat512` comparison. The low-budget normalized gap changes from {_format_num(requirements['ridge_native_low_budget_mean_gap'])} for the frozen native ridge to {_format_num(requirements['native_low_budget_mean_gap'])} for the native MLP and {_format_num(requirements['full_whitened_low_budget_mean_gap'])} after full train-only whitening. These are normalized-gap differences, not multiplicative “times worse” statements; the raw R² distributions are reported alongside them. Phase-I **{phase1_outcome} remains unchanged**.
 
-The empirical decomposition is reader-specific: full-budget operational ceiling, finite-sample accessibility relative to that ceiling, conditioning dependence under an invertible train-only transform, reader dependence, and spectral dependence. Volatility and timing remain separate controls. Spectral MLP performance is discussed only as consistent or inconsistent with Phase-II localization, never as recovery of predictive mass.
+The empirical decomposition is reader-specific: full-budget operational ceiling, finite-sample accessibility relative to that ceiling, conditioning dependence under an invertible train-only transform, reader dependence, and spectral dependence. R3 is restricted to the selected MLP protocol and is not a claim about nonlinear readers generally. Volatility and timing remain separate controls. Spectral MLP performance is discussed only as consistent or inconsistent with Phase-II localization, never as recovery of predictive mass. Current intervals quantify computational robustness; grouped stock-day uncertainty is pending.
 """
     if reduced:
-        changelog = """# Experiment 01 Phase III-R — changelog
+        changelog = f"""# Experiment 01 Phase III-R — changelog
 
-- Terminated the 21,456-model Phase-III v1 grid before selection freeze and before test access because observed runtime made it infeasible.
-- Froze a compute-feasible 1,296-model amendment before test access.
-- Retained two adjacent primary low budgets, full-budget ceilings, both branches, three encoder seeds, three paired subset seeds and three reader seeds.
+- Recorded Phase-III v1 termination status `{termination['status']}` before selection freeze and before test access.
+- Froze a compute-feasible {int(protocol_inventory['total_models'])}-model amendment before test access.
+- Retained {primary_low_budget_count} adjacent primary low budgets, full-budget ceilings, {primary_branch_count} branches, {primary_encoder_seed_count} encoder seeds, {primary_subset_seed_count} paired subset seeds and {primary_reader_seed_count} reader seeds.
 - Retained volatility and timing as separate low/full specificity controls.
 - Focused the nonlinear spectral diagnostic on horizon-JEPA directional head, deep and full-rank coordinates.
 - Removed capacity sensitivity and redundant nonlinear spectral arms; frozen Phase II remains the detailed spectral analysis.
 - Reused only exact v1 selection cells after fingerprint and artifact-hash verification.
-- Preserved the MLP, optimizer, stopping schedule, weight-decay grid, splits, targets, metrics, thresholds, R1--R4 rules and Phase-I A1 outcome.
+- Preserved the MLP, optimizer, stopping schedule, weight-decay grid, splits, targets, metrics, thresholds, R1--R4 rules and Phase-I {phase1_outcome} outcome.
+- Reframed R3 as a technical result for the selected MLP family, added raw R² distributions beside normalized gaps, and labelled uncertainty as computational robustness.
 """
     else:
         changelog = """# Experiment 01 Phase III — changelog
@@ -1541,8 +1760,8 @@ The empirical decomposition is reader-specific: full-budget operational ceiling,
     }
     hashes = {}
     for name, content in paths.items():
-        path = root / name
-        path.write_text(content, encoding="utf-8")
+        path = report_root / name
+        atomic_write_text(path, content)
         hashes[name] = sha256_file(path)
     return hashes
 

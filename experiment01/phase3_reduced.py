@@ -336,6 +336,15 @@ def prepare_phase3_reduced(
 
     amendment_text = """# Experiment 01 Phase III-R — compute-feasible amendment
 
+This amendment is subordinate to the later definitive Phase-III v1
+specification,
+[`SPEC_EXPERIMENT_01_PHASE3_READER_ACCESSIBILITY_20260801.md`](https://github.com/nicoloeffe/thesis_proposal/blob/main/docs/experiment01/SPEC_EXPERIMENT_01_PHASE3_READER_ACCESSIBILITY_20260801.md),
+SHA-256
+`78ca15821ac40355c35e5f40ecaf5086f5e6bbb6f339255a85b13fc7d952a151`.
+That specification replaces the eligibility rule in the earlier optional MLP
+section: the executed `b_1_4` floor is therefore eligible under the governing
+Phase-III contract.
+
 Phase III v1 was stopped for computational infeasibility before the selection
 manifest was frozen and before any production test access. Phase III-R changes
 only the job inventory. It preserves the frozen bundle, splits, subset row

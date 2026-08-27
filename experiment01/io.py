@@ -132,6 +132,31 @@ def atomic_write_json(path: str | os.PathLike[str], payload: Mapping[str, Any]) 
         raise
 
 
+def atomic_write_text(
+    path: str | os.PathLike[str], text: str, *, encoding: str = "utf-8"
+) -> None:
+    """Atomically write UTF-8 narrative artifacts in the destination directory."""
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding=encoding) as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, destination)
+    except BaseException:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+        temporary.unlink(missing_ok=True)
+        raise
+
+
 def json_safe(value: Any) -> Any:
     """Recursively convert NumPy/non-finite values to strict JSON values."""
     if isinstance(value, Mapping):

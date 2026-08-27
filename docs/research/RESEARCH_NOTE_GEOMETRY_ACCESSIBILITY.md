@@ -21,9 +21,14 @@ that predictive content, pooling, and variance-ordered accessibility can
 separate sharply. A supervised representation aligns a directional target with
 its leading covariance directions. A horizon-predictive representation retains
 substantial nonlinear content at the final time step, yet its leading principal
-subspace is less predictive than random subspaces of the same dimension; most
-of its linearly decodable signal lies in contrasts between tokens and is
-largely destroyed by temporal averaging. Both representations are strongly
+subspace is less predictive than random subspaces of the same dimension, and
+temporal averaging selectively removes much of its decodable content. A fixed
+all-ones projection over the four token roles also retains much less linear
+performance for horizon-JEPA than for supervised. A completed structured
+role-Haar diagnostic, however, does not find that this direction or its matched
+complement is exceptional across all encoder seeds. The fixed projection is
+therefore retained as an operational readout fact, not as evidence for a
+privileged relational mechanism. Both representations are strongly
 anisotropic, so anisotropy alone does not explain the difference.
 
 We formulate four distinct objects—predictive content, resource-constrained
@@ -76,9 +81,10 @@ outperform the null.
 This effect is not explained by a simple difference in anisotropy. The
 participation ratios of the final readouts are \(7.91\) for horizon-JEPA and
 \(7.05\) for supervised, despite their opposite accessibility profiles. Nor is
-it equivalent to absence of predictive content: a multiseed nonlinear reader
-recovers \(R^2=0.3191\) from horizon-JEPA and \(0.3881\) from supervised at the
-last position.
+it equivalent to absence of predictive content: the historical post-P0
+multiseed nonlinear diagnostic recovers \(R^2=0.3191\) from horizon-JEPA and
+\(0.3881\) from supervised at the last position. This diagnostic predates and
+is not interchangeable with the later Phase-III-R reader protocol.
 
 The resulting question is:
 
@@ -139,7 +145,7 @@ Z_t^{(P)}=P(G_t)\in\mathbb R^D.
 
 The distinction between \(G_t\) and \(Z_t^{(P)}\) is essential. A pooling can
 remove information, cancel temporally inconsistent coordinates, or discard
-token contrasts before any downstream reader is fitted.
+role-specific variation before any downstream reader is fitted.
 
 On real data, \(S_t\), the sufficient predictive statistic, and Bayes risk are
 unknown. The best available quantities are therefore operational lower bounds
@@ -436,9 +442,9 @@ isotropy-versus-anisotropy:
 Masked-JEPA is more diffuse yet less predictive, providing an internal control
 against the claim that higher effective rank is automatically more useful.
 
-### 5.2 Content depends on pooling and token relations
+### 5.2 Pooling dependence and the matched token-role diagnostic
 
-The nonlinear reader gives:
+The historical post-P0 nonlinear reader—not the later Phase-III-R reader—gives:
 
 | pooling | horizon-JEPA | masked-JEPA | supervised |
 |---|---:|---:|---:|
@@ -450,8 +456,11 @@ The horizon/supervised ratio is \(82.23\%\) at the final position but
 representation is intrinsically temporally incoherent: it establishes that the
 chosen pooling is not information-neutral.
 
-An orthogonal Hadamard decomposition across the four token roles localizes the
-linear horizon-JEPA signal:
+After selecting the endpoint readout, a Hadamard rotation across the four token
+roles defines one fixed all-ones component and its three-dimensional zero-sum
+complement in role space. With 128 channels per role, these are respectively
+128- and 384-dimensional feature blocks. The historical linear diagnostic
+reported:
 
 \[
 R^2_{\mathrm{common}}\approx0.041,
@@ -461,9 +470,42 @@ R^2_{\mathrm{contrasts}}\approx0.205,
 R^2_{\mathrm{full}}\approx0.211.
 \]
 
-Most linearly decodable directional content is therefore relational across
-tokens rather than carried by their shared mean. This gives a concrete
-structural meaning to the pooling dependence.
+These values establish an operational fact: the fixed 128-dimensional
+all-ones role projection retains little of horizon-JEPA's full-readout linear
+performance, whereas it retains nearly all supervised performance in the
+corresponding historical diagnostic. They do **not** establish that the
+zero-sum role complement is intrinsically special. Its 384 dimensions are
+three times the dimension of the all-ones block, and the independently fitted
+out-of-sample values are not additive:
+
+\[
+R^2_{\mathrm{common}}+R^2_{\mathrm{contrasts}}
+\ne R^2_{\mathrm{full}}.
+\]
+
+Orthogonality of the Hadamard basis on the role index does not imply
+statistical independence of the projected feature blocks.
+
+The preregistered T2 diagnostic subsequently compared the observed blocks with
+100 deterministic Haar rotations in the four-dimensional role space, using
+the same 128/384-dimensional common/complement split and the same historical
+OLS reader. The historical 1,188 per-target cells were first reproduced with
+maximum absolute error (1.79\times10^{-12}). For horizon-JEPA
+`last_concat512`, the common-block lower-tail probabilities were
+(0.099,0.059,0.099) across encoder seeds and the complement upper-tail
+probabilities were (0.129,0.129,0.099). Thus neither preregistered condition
+held in all three seeds. The same joint decision failed for `meanK_concatS`,
+masked-JEPA and supervised. Shuffled-target block means lay between
+(-0.0042) and (-0.0011), as expected for a null reader.
+
+Consequently the structured role-null explanation is **not rejected**. This
+does not erase the cross-encoder fixed-projection difference; it removes the
+stronger claim that the Hadamard all-ones axis or its zero-sum complement is a
+privileged relational mechanism. Temporal averaging, role projection and PCA
+anti-alignment remain three distinct empirical operators. The mathematical
+simulator should encode the spectral and temporal phenomena directly and may
+include the all-ones projection only as an operational observation, not as a
+special mechanism.
 
 ### 5.3 Held-out targets give a mixed result
 

@@ -2,16 +2,16 @@
 
 ## Stato e risultato
 
-Phase II è completata come analisi diagnostica preregistrata. Phase I non è stata modificata: soglie, risultati e outcome tecnico **A1** restano congelati. Non sono stati avviati MLP, nuovi training, VICReg, simulatori o Phase III.
+Phase II è completata come analisi diagnostica preregistrata. Phase I non è stata modificata: soglie, risultati e outcome tecnico **A1** restano congelati. Durante Phase II non sono stati eseguiti MLP, nuovi training, VICReg o simulatori. Nel repository è ora presente anche Phase III-R completata; questa evidenza successiva non modifica Phase II né l'outcome Phase I.
 
 Il gate storico PCA post-P0 passa su 3960 celle con errore assoluto massimo `5.662e-15` (tolleranza `5.0e-10`). Il gate aggiuntivo full-rank Phase I↔Phase II passa per tutte le 18 feature e 23 target, con errore massimo `6.914e-12`.
 
 ### Diagnosi in breve
 
-- **Specificità direzionale netta.** Su `last_concat512`, horizon-JEPA colloca soltanto 0.0001 e 0.0064 della massa direzionale cumulativa nelle prime 8 e 16 PC; supervised ne colloca rispettivamente 0.7518 e 0.8742. Per horizon-JEPA a k=8 i controlli sono molto meno estremi: volatilità 0.5601, timing 0.8141.
-- **Top-PCA underperformance localizzata.** Per horizon-JEPA direzionale, tutti i 100 sottospazi Haar superano top-PCA a k=8 e k=16 in ciascuno dei tre encoder seed. La transizione è eterogenea a k=32/64 e top-PCA domina il null a k=128/256. Supervised top-PCA è al percentile 100 del null a tutte le profondità riportate.
+- **Specificità direzionale descrittiva.** Su `last_concat512`, horizon-JEPA colloca soltanto 0.0001 e 0.0064 della massa direzionale cumulativa nelle prime 8 e 16 PC; supervised ne colloca rispettivamente 0.7518 e 0.8742. Per horizon-JEPA a k=8 i controlli sono molto meno estremi: volatilità 0.5601, timing 0.8141. Il contrasto resta una diagnostica finché manca incertezza raggruppata per stock-day.
+- **Top-PCA underperformance localizzata.** Per horizon-JEPA direzionale, tutti i 100 sottospazi Haar superano top-PCA a k=8 e k=16 in ciascuno dei 3 encoder seed. La transizione è eterogenea alle profondità 32, 64; top-PCA domina il null alle profondità 128, 256. Supervised top-PCA è al percentile 100 del null a tutte le profondità riportate.
 - **Meccanismo coerente con whitening profondo, non prova causale.** Horizon-JEPA raggiunge solo 0.6458 della massa direzionale a k=128 e 0.8330 a k=256, contro 0.9748 e 0.9903 per supervised. Questa dispersione fornisce una spiegazione spettrale coerente del gap finite-sample e della profondità di whitening, ma il ponte resta descrittivo perché il whitening riscala il full rank anziché troncarlo.
-- **La storia locale 17:32→33:64 non regge come spiegazione generale.** Il confronto paired non è robustamente positivo per entrambi i rami decisivi; la non-monotonia resta non spiegata da quella singola coppia di bande.
+- **La storia locale 17:32→33:64 non è un confronto dimension-matched.** La prima banda contiene 16 direzioni e la seconda 32: la loro differenza grezza non può spiegare la non-monotonia. Il report conserva i valori storici come audit, ma usa soltanto il confronto di ciascuna banda con il proprio null Haar matched e la massa per direzione come descrittivi.
 
 ## Protocollo effettivo
 
@@ -24,7 +24,7 @@ Il gate storico PCA post-P0 passa su 3960 celle con errore assoluto massimo `5.6
 
 ## Localizzazione della predictive mass
 
-La tabella seguente riporta la frazione cumulativa media della predictive mass sui target indipendenti. Gli intervalli sono gerarchici sui tre encoder seed.
+La tabella seguente riporta la frazione cumulativa media della predictive mass sui target indipendenti. Gli intervalli gerarchici sui seed misurano robustezza computazionale, non generalizzazione di popolazione.
 
 | block | branch | k | mass | 95% CI |
 | --- | --- | --- | --- | --- |
@@ -71,7 +71,7 @@ La tabella seguente riporta la frazione cumulativa media della predictive mass s
 | volatility | supervised | 256 | 0.9924 | [0.9898, 0.9945] |
 | volatility | supervised | 508 | 1.0000 | [1.0000, 1.0000] |
 
-Le curve complete, comprese `meanK_concatS` e `jepa_masked`, sono in `predictive_mass_intervals.parquet` e nella figura 01. La predictive mass non è identificata con R² out-of-sample: è una diagnostica population-style stimata sul train e viene confrontata separatamente con ladder e bande sul test.
+Le curve complete, comprese `meanK_concatS` e `jepa_masked`, sono in `predictive_mass_intervals.parquet` e nella figura 01. La predictive mass non è identificata con R² out-of-sample: è una statistica stimata sul train e viene confrontata separatamente con ladder e bande sul test.
 
 ## Top-PCA versus sottospazi Haar
 
@@ -96,7 +96,26 @@ I risultati sono riportati per ogni encoder seed in `random_null_summary.parquet
 
 ## Bande spettrali e non-monotonia k=8,16,32,64
 
-Il test post hoc preregistrato confronta in modo paired la banda 17:32 con 33:64. Una differenza positiva significa che 33:64 contiene più predictive mass o produce R² band-only maggiore.
+La differenza storica confronta `17:32` (16 direzioni) con `33:64` (32
+direzioni). Non è quindi un contrasto dimension-matched e non viene usata come
+evidenza a favore o contro una localizzazione meccanicistica. La tabella
+seguente riporta invece, separatamente per banda, il null Haar della stessa
+dimensione e la massa predittiva media per direzione. Le medie sono descrittive
+tra encoder seed; i valori per seed restano negli artefatti.
+
+| branch | band | dimension | variance fraction | predictive mass | mass/direction | band-only R2 | matched Haar R2 | p(random > band) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| jepa_horizon | 17:32 | 16 | 0.0447 | 0.1238 | 0.007735 | 0.0223 | 0.0093 | 0.080 |
+| jepa_horizon | 33:64 | 32 | 0.0130 | 0.2284 | 0.007137 | 0.0534 | 0.0300 | 0.127 |
+| jepa_masked | 17:32 | 16 | 0.1836 | 0.0034 | 0.000213 | 0.0005 | 0.0010 | 0.973 |
+| jepa_masked | 33:64 | 32 | 0.1471 | 0.0186 | 0.000580 | 0.0021 | 0.0024 | 0.567 |
+| supervised | 17:32 | 16 | 0.0573 | 0.0424 | 0.002652 | 0.0160 | 0.2883 | 1.000 |
+| supervised | 33:64 | 32 | 0.0245 | 0.0231 | 0.000721 | 0.0073 | 0.3345 | 1.000 |
+
+Per trasparenza, le differenze paired originarie restano riportate sotto come
+**audit legacy non dimension-matched**. La colonna `robust` descrive soltanto se
+l'intervallo della differenza grezza esclude zero; non corregge il confondimento
+di dimensione.
 
 | branch | metric | difference | 95% CI | robust |
 | --- | --- | --- | --- | --- |
@@ -107,11 +126,17 @@ Il test post hoc preregistrato confronta in modo paired la banda 17:32 con 33:64
 | jepa_masked | predictive_mass_fraction_33_64_minus_17_32 | 0.0152 | [0.0074, 0.0214] | True |
 | supervised | predictive_mass_fraction_33_64_minus_17_32 | -0.0194 | [-0.0303, -0.0098] | False |
 
-Conclusione della verifica: **non supportata in modo robusto per entrambi i rami decisivi; resta una spiegazione post hoc non confermata**. Questa diagnosi non modifica l’interpretazione né l’outcome di Phase I. I risultati per encoder seed sono in `nonmonotonicity_per_encoder.parquet`; tutte le bande, leave-band-out e null matched sono in `spectral_bands.parquet`.
+Conclusione corretta: **la specifica spiegazione 17:32→33:64 resta non
+verificata perché il contrasto diretto è dimension-confounded**. I null matched
+di ciascuna banda sono diagnostiche separate e non trasformano quel confronto
+in un test paired valido. Questa revisione non modifica l'outcome di Phase I né
+il risultato numerico originale. I risultati per encoder seed sono in
+`nonmonotonicity_per_encoder.parquet`; tutte le bande, leave-band-out e null
+matched sono in `spectral_bands.parquet`.
 
 ## Ponte con il whitening Phase I
 
-Il ponte usa senza rifit `k_50gap = 128`, `k_nonrobust = 508` e i gap congelati a k=0,8,16,32,64,128,256,508. Il whitening parziale a 128 dimezza il gap ma non lo elimina; la non-robustezza richiede whitening quasi completo. Phase II non assume né conclude che il problema sia concentrato in poche PC.
+Il ponte usa senza rifit `k_50gap = 128`, `k_nonrobust = 508` e i gap congelati alle profondità 0, 8, 16, 32, 64, 128, 256, 508. Il whitening a 128 dimezza il gap ma non lo elimina; la non-robustezza compare a 508, la massima profondità valida testata. Phase II non assume né conclude che il problema sia concentrato in poche PC.
 
 | block | budget | k | Phase-I gap |
 | --- | --- | --- | --- |
@@ -172,12 +197,14 @@ Directional, volatility e timing sono riportati separatamente e con identica pro
 
 Il null Haar usa il min-norm OLS diagnostico per preservare la parità con il vecchio PCA ladder post-P0. Il ridge tarato è prodotto per top-k, bottom-k, band-only e leave-band-out, ma non viene usato per selezionare o classificare estrazioni Haar.
 
+Gli intervalli correnti non includono resampling di stock e stock-day; una diagnostica che non sopravvive a tale incertezza raggruppata dovrà essere declassata. Il dataset copre sette titoli di un singolo mercato, usa lo split storico non globalmente cronologico e il test deriva da un held-out set già esplorato storicamente. Questi limiti impediscono di trattare Phase II come conferma esterna.
+
 ## Compute e failure
 
 - Runtime core interno: `702.3` s; wall time canonico esterno: `718.5` s.
 - Peak RAM canonica (`GNU time -v`): `4.35` GiB. Il campionamento interno è conservato in metadata ma non viene usato come stima del picco.
 - Failure tecniche: 0.
-- Cache: statistiche sufficienti in coordinate PCA; nessun rifit sui 270 GB per k, banda o sottospazio.
+- Cache: statistiche sufficienti in coordinate PCA; nessun rifit dell'intero bundle per ogni k, banda o sottospazio.
 
 ## Artefatti
 

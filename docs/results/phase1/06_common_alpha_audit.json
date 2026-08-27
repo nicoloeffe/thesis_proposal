@@ -24,18 +24,16 @@
     1.0,
     2.5118864315095824,
     6.309573444801943,
-    15.848931924611174,
-    39.810717055349855,
-    100.0,
-    251.18864315095823,
-    630.9573444801943,
-    1584.8931924611175,
-    3981.0717055349855
+    15.848931924611174
   ],
   "figure": "06_common_alpha_gap_surface.png",
   "lambda_definition": "lambda = alpha * trace(covariance) / D",
+  "n_paired_surface_cells": 325,
   "n_source_rows": 151554,
-  "reader_family_filter": "ridge_raw_common_alpha",
+  "reader_families_observed": [
+    "ridge_raw_common_alpha"
+  ],
+  "status": "generated",
   "uses_common_absolute_lambda": false,
   "uses_common_alpha": true
 }

@@ -1,0 +1,954 @@
+{
+  "canonical_bundle_manifest_sha256": "bdded4ebd03c29d47e5dfdba106590f24763cc06bb7e6e5ea379eb4b34201c0b",
+  "canonical_manifest_path": "docs/experiment01/CHECKPOINTS_MULTISEED_MANIFEST.json",
+  "canonical_manifest_sha256": "5d416d0d87cbb20f097afaaa85383d8838fb9abb9233aade29afc0ed3a2fad11",
+  "checkpoints": [
+    {
+      "arm": "jepa_horizon",
+      "canonical_epoch20_validation_metric": 0.13954662303447724,
+      "effective_optimizer_updates": 39060,
+      "effective_rows_per_epoch_drop_last": 499968,
+      "encoder_parameters": 535680,
+      "epoch": 20,
+      "format_version": "jepa_horizon",
+      "history_best_epoch": 20,
+      "history_best_validation_metric": 0.13954662303447724,
+      "history_path": "checkpoints/multiseed/jepa_horizon/seed0/history.json",
+      "history_sha256": "f1978c92a24e98cc8d2d2b8e2cab624ec49e14cde77271e3d5cda47fec35e6f5",
+      "id": "jepa_horizon_seed0_ep020",
+      "objective": {
+        "ema_target": true,
+        "ema_tau": [
+          0.996,
+          0.9995
+        ],
+        "horizons": [
+          0,
+          1,
+          5,
+          10,
+          20
+        ],
+        "loss": "l1",
+        "name": "horizon latent prediction"
+      },
+      "objective_head_parameters": 152704,
+      "optimizer": {
+        "algorithm": "AdamW",
+        "amsgrad": false,
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "eps": 1e-08,
+        "initial_lr": 0.0003,
+        "lr_at_checkpoint": 2.9999999999999997e-06,
+        "weight_decay": 0.0001
+      },
+      "path": "checkpoints/multiseed/jepa_horizon/seed0/epoch_020.pt",
+      "schedule": {
+        "T_max_epochs": 20,
+        "eta_min_fraction": 0.01,
+        "family": "epoch-level cosine annealing"
+      },
+      "seed": 0,
+      "sha256": "756aa9dfd88b65eb5cfabca8e2d93c6fefa52994e39ae321f3ad23435f5ea619",
+      "size_bytes": 10562059,
+      "steps_per_epoch": 1953,
+      "stock_stats_sha256": "0938cfda578710436220d0a31fd5d6101c496dafa1512784a4dddef3a44f7900",
+      "train_args": {
+        "batch_size": 256,
+        "epochs": 20,
+        "eta_min_frac": 0.01,
+        "grad_clip": 1.0,
+        "lr": 0.0003,
+        "max_train_samples": 500000,
+        "max_val_samples": 50000,
+        "num_workers": 2,
+        "seed": 0,
+        "split_seed": 0,
+        "val_frac": 0.1,
+        "vol_clip": 5.0,
+        "weight_decay": 0.0001
+      },
+      "train_rows_sampled": 500000,
+      "validation_rows": 50000
+    },
+    {
+      "arm": "jepa_horizon",
+      "canonical_epoch20_validation_metric": 0.14600089280128478,
+      "effective_optimizer_updates": 39060,
+      "effective_rows_per_epoch_drop_last": 499968,
+      "encoder_parameters": 535680,
+      "epoch": 20,
+      "format_version": "jepa_horizon",
+      "history_best_epoch": 20,
+      "history_best_validation_metric": 0.14600089280128478,
+      "history_path": "checkpoints/multiseed/jepa_horizon/seed1/history.json",
+      "history_sha256": "4e5ce189e97d95dbfb30f4316e59a0b8a73f6ae79d51ae6eb9700306be7b2ce6",
+      "id": "jepa_horizon_seed1_ep020",
+      "objective": {
+        "ema_target": true,
+        "ema_tau": [
+          0.996,
+          0.9995
+        ],
+        "horizons": [
+          0,
+          1,
+          5,
+          10,
+          20
+        ],
+        "loss": "l1",
+        "name": "horizon latent prediction"
+      },
+      "objective_head_parameters": 152704,
+      "optimizer": {
+        "algorithm": "AdamW",
+        "amsgrad": false,
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "eps": 1e-08,
+        "initial_lr": 0.0003,
+        "lr_at_checkpoint": 2.9999999999999997e-06,
+        "weight_decay": 0.0001
+      },
+      "path": "checkpoints/multiseed/jepa_horizon/seed1/epoch_020.pt",
+      "schedule": {
+        "T_max_epochs": 20,
+        "eta_min_fraction": 0.01,
+        "family": "epoch-level cosine annealing"
+      },
+      "seed": 1,
+      "sha256": "fa3fc130f3421895130ea2174a88f698fb7db1692f8de6d76368153d2a3a096a",
+      "size_bytes": 10562059,
+      "steps_per_epoch": 1953,
+      "stock_stats_sha256": "0938cfda578710436220d0a31fd5d6101c496dafa1512784a4dddef3a44f7900",
+      "train_args": {
+        "batch_size": 256,
+        "epochs": 20,
+        "eta_min_frac": 0.01,
+        "grad_clip": 1.0,
+        "lr": 0.0003,
+        "max_train_samples": 500000,
+        "max_val_samples": 50000,
+        "num_workers": 2,
+        "seed": 1,
+        "split_seed": 0,
+        "val_frac": 0.1,
+        "vol_clip": 5.0,
+        "weight_decay": 0.0001
+      },
+      "train_rows_sampled": 500000,
+      "validation_rows": 50000
+    },
+    {
+      "arm": "jepa_horizon",
+      "canonical_epoch20_validation_metric": 0.1475693720626831,
+      "effective_optimizer_updates": 39060,
+      "effective_rows_per_epoch_drop_last": 499968,
+      "encoder_parameters": 535680,
+      "epoch": 20,
+      "format_version": "jepa_horizon",
+      "history_best_epoch": 19,
+      "history_best_validation_metric": 0.14728590349197387,
+      "history_path": "checkpoints/multiseed/jepa_horizon/seed2/history.json",
+      "history_sha256": "53f10458d1f254e318c772a266e5bd5805f02b5779a84250da1267b8ee3d8599",
+      "id": "jepa_horizon_seed2_ep020",
+      "objective": {
+        "ema_target": true,
+        "ema_tau": [
+          0.996,
+          0.9995
+        ],
+        "horizons": [
+          0,
+          1,
+          5,
+          10,
+          20
+        ],
+        "loss": "l1",
+        "name": "horizon latent prediction"
+      },
+      "objective_head_parameters": 152704,
+      "optimizer": {
+        "algorithm": "AdamW",
+        "amsgrad": false,
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "eps": 1e-08,
+        "initial_lr": 0.0003,
+        "lr_at_checkpoint": 2.9999999999999997e-06,
+        "weight_decay": 0.0001
+      },
+      "path": "checkpoints/multiseed/jepa_horizon/seed2/epoch_020.pt",
+      "schedule": {
+        "T_max_epochs": 20,
+        "eta_min_fraction": 0.01,
+        "family": "epoch-level cosine annealing"
+      },
+      "seed": 2,
+      "sha256": "c4a5d3c011ff79b1cc887f0f7045f55aba043ecacd0b054280a470507f0b9ecc",
+      "size_bytes": 10562059,
+      "steps_per_epoch": 1953,
+      "stock_stats_sha256": "0938cfda578710436220d0a31fd5d6101c496dafa1512784a4dddef3a44f7900",
+      "train_args": {
+        "batch_size": 256,
+        "epochs": 20,
+        "eta_min_frac": 0.01,
+        "grad_clip": 1.0,
+        "lr": 0.0003,
+        "max_train_samples": 500000,
+        "max_val_samples": 50000,
+        "num_workers": 2,
+        "seed": 2,
+        "split_seed": 0,
+        "val_frac": 0.1,
+        "vol_clip": 5.0,
+        "weight_decay": 0.0001
+      },
+      "train_rows_sampled": 500000,
+      "validation_rows": 50000
+    },
+    {
+      "arm": "jepa_masked",
+      "canonical_epoch20_validation_metric": 0.26855269066810605,
+      "effective_optimizer_updates": 39060,
+      "effective_rows_per_epoch_drop_last": 499968,
+      "encoder_parameters": 535680,
+      "epoch": 20,
+      "format_version": "jepa_masked",
+      "history_best_epoch": 8,
+      "history_best_validation_metric": 0.25073021505355836,
+      "history_path": "checkpoints/multiseed/jepa_masked/seed0/history.json",
+      "history_sha256": "77e73afc733b6c5106d655b13fcca037b97d251a7c2ab570ba58277a0533164a",
+      "id": "jepa_masked_seed0_ep020",
+      "objective": {
+        "ema_target": true,
+        "ema_tau": [
+          0.996,
+          0.9995
+        ],
+        "loss": "l1",
+        "mask_ratio": [
+          0.5,
+          0.65
+        ],
+        "name": "structured masked latent prediction"
+      },
+      "objective_head_parameters": 152448,
+      "optimizer": {
+        "algorithm": "AdamW",
+        "amsgrad": false,
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "eps": 1e-08,
+        "initial_lr": 0.0003,
+        "lr_at_checkpoint": 2.9999999999999997e-06,
+        "weight_decay": 0.0001
+      },
+      "path": "checkpoints/multiseed/jepa_masked/seed0/epoch_020.pt",
+      "schedule": {
+        "T_max_epochs": 20,
+        "eta_min_fraction": 0.01,
+        "family": "epoch-level cosine annealing"
+      },
+      "seed": 0,
+      "sha256": "4a20451e3ab47a3ba6dab14cbbaaa076027fb075a384f7ab749259492e57d189",
+      "size_bytes": 10560779,
+      "steps_per_epoch": 1953,
+      "stock_stats_sha256": "0938cfda578710436220d0a31fd5d6101c496dafa1512784a4dddef3a44f7900",
+      "train_args": {
+        "batch_size": 256,
+        "epochs": 20,
+        "eta_min_frac": 0.01,
+        "grad_clip": 1.0,
+        "lr": 0.0003,
+        "max_train_samples": 500000,
+        "max_val_samples": 50000,
+        "num_workers": 2,
+        "seed": 0,
+        "split_seed": 0,
+        "val_frac": 0.1,
+        "vol_clip": 5.0,
+        "weight_decay": 0.0001
+      },
+      "train_rows_sampled": 500000,
+      "validation_rows": 50000
+    },
+    {
+      "arm": "jepa_masked",
+      "canonical_epoch20_validation_metric": 0.26528953008651734,
+      "effective_optimizer_updates": 39060,
+      "effective_rows_per_epoch_drop_last": 499968,
+      "encoder_parameters": 535680,
+      "epoch": 20,
+      "format_version": "jepa_masked",
+      "history_best_epoch": 6,
+      "history_best_validation_metric": 0.24337604396820067,
+      "history_path": "checkpoints/multiseed/jepa_masked/seed1/history.json",
+      "history_sha256": "62903969b9c9879fcceb0de27d3af36ca54f0f943b42fb2e8103ffa63e324ac2",
+      "id": "jepa_masked_seed1_ep020",
+      "objective": {
+        "ema_target": true,
+        "ema_tau": [
+          0.996,
+          0.9995
+        ],
+        "loss": "l1",
+        "mask_ratio": [
+          0.5,
+          0.65
+        ],
+        "name": "structured masked latent prediction"
+      },
+      "objective_head_parameters": 152448,
+      "optimizer": {
+        "algorithm": "AdamW",
+        "amsgrad": false,
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "eps": 1e-08,
+        "initial_lr": 0.0003,
+        "lr_at_checkpoint": 2.9999999999999997e-06,
+        "weight_decay": 0.0001
+      },
+      "path": "checkpoints/multiseed/jepa_masked/seed1/epoch_020.pt",
+      "schedule": {
+        "T_max_epochs": 20,
+        "eta_min_fraction": 0.01,
+        "family": "epoch-level cosine annealing"
+      },
+      "seed": 1,
+      "sha256": "75a74630448b0244e99df781e4c4db1140e79b9bc3d8dd9ccf54d88365b9289f",
+      "size_bytes": 10560779,
+      "steps_per_epoch": 1953,
+      "stock_stats_sha256": "0938cfda578710436220d0a31fd5d6101c496dafa1512784a4dddef3a44f7900",
+      "train_args": {
+        "batch_size": 256,
+        "epochs": 20,
+        "eta_min_frac": 0.01,
+        "grad_clip": 1.0,
+        "lr": 0.0003,
+        "max_train_samples": 500000,
+        "max_val_samples": 50000,
+        "num_workers": 2,
+        "seed": 1,
+        "split_seed": 0,
+        "val_frac": 0.1,
+        "vol_clip": 5.0,
+        "weight_decay": 0.0001
+      },
+      "train_rows_sampled": 500000,
+      "validation_rows": 50000
+    },
+    {
+      "arm": "jepa_masked",
+      "canonical_epoch20_validation_metric": 0.25914098399162294,
+      "effective_optimizer_updates": 39060,
+      "effective_rows_per_epoch_drop_last": 499968,
+      "encoder_parameters": 535680,
+      "epoch": 20,
+      "format_version": "jepa_masked",
+      "history_best_epoch": 7,
+      "history_best_validation_metric": 0.24279134733200072,
+      "history_path": "checkpoints/multiseed/jepa_masked/seed2/history.json",
+      "history_sha256": "52edeec56bfb6c6e758e25f5d804bb266bf381c6a55fdf6ccb9c5fb31f0002b0",
+      "id": "jepa_masked_seed2_ep020",
+      "objective": {
+        "ema_target": true,
+        "ema_tau": [
+          0.996,
+          0.9995
+        ],
+        "loss": "l1",
+        "mask_ratio": [
+          0.5,
+          0.65
+        ],
+        "name": "structured masked latent prediction"
+      },
+      "objective_head_parameters": 152448,
+      "optimizer": {
+        "algorithm": "AdamW",
+        "amsgrad": false,
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "eps": 1e-08,
+        "initial_lr": 0.0003,
+        "lr_at_checkpoint": 2.9999999999999997e-06,
+        "weight_decay": 0.0001
+      },
+      "path": "checkpoints/multiseed/jepa_masked/seed2/epoch_020.pt",
+      "schedule": {
+        "T_max_epochs": 20,
+        "eta_min_fraction": 0.01,
+        "family": "epoch-level cosine annealing"
+      },
+      "seed": 2,
+      "sha256": "67ee7db0ee92b4402225e3d1161fe7c71d55c545cdbc72c1a5b115baddecb94d",
+      "size_bytes": 10560779,
+      "steps_per_epoch": 1953,
+      "stock_stats_sha256": "0938cfda578710436220d0a31fd5d6101c496dafa1512784a4dddef3a44f7900",
+      "train_args": {
+        "batch_size": 256,
+        "epochs": 20,
+        "eta_min_frac": 0.01,
+        "grad_clip": 1.0,
+        "lr": 0.0003,
+        "max_train_samples": 500000,
+        "max_val_samples": 50000,
+        "num_workers": 2,
+        "seed": 2,
+        "split_seed": 0,
+        "val_frac": 0.1,
+        "vol_clip": 5.0,
+        "weight_decay": 0.0001
+      },
+      "train_rows_sampled": 500000,
+      "validation_rows": 50000
+    },
+    {
+      "arm": "supervised",
+      "canonical_epoch20_validation_metric": 0.5800002902221679,
+      "effective_optimizer_updates": 39060,
+      "effective_rows_per_epoch_drop_last": 499968,
+      "encoder_parameters": 535680,
+      "epoch": 20,
+      "format_version": "supervised_grid_v1",
+      "history_best_epoch": 20,
+      "history_best_validation_metric": 0.5800002902221679,
+      "history_path": "checkpoints/multiseed/supervised/seed0/history.json",
+      "history_sha256": "a9f0ddbb22251ba8518240654005acd48ad505d523824dbceb02176df4ed8acd",
+      "id": "supervised_seed0_ep020",
+      "objective": {
+        "loss": "mean-squared error",
+        "name": "standardized 22-target supervised regression",
+        "target_count": 22,
+        "target_names": [
+          "d_spread_z@1",
+          "d_spread_z@5",
+          "d_spread_z@10",
+          "d_spread_z@20",
+          "d_microprice_rel@1",
+          "d_microprice_rel@5",
+          "d_microprice_rel@10",
+          "d_microprice_rel@20",
+          "d_best_bid_rel@1",
+          "d_best_bid_rel@5",
+          "d_best_bid_rel@10",
+          "d_best_bid_rel@20",
+          "d_best_ask_rel@1",
+          "d_best_ask_rel@5",
+          "d_best_ask_rel@10",
+          "d_best_ask_rel@20",
+          "d_top_imbalance@1",
+          "d_top_imbalance@5",
+          "d_top_imbalance@10",
+          "d_top_imbalance@20",
+          "realized_vol@5",
+          "realized_vol@20"
+        ],
+        "target_standardization": "per target, training-row mean and std",
+        "timing_directly_supervised": false
+      },
+      "objective_head_parameters": 36246,
+      "optimizer": {
+        "algorithm": "AdamW",
+        "amsgrad": false,
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "eps": 1e-08,
+        "initial_lr": 0.0003,
+        "lr_at_checkpoint": 2.9999999999999997e-06,
+        "weight_decay": 0.0001
+      },
+      "path": "checkpoints/multiseed/supervised/seed0/epoch_020.pt",
+      "schedule": {
+        "family": "linear warm-up plus cosine decay",
+        "implementation_cadence": "the scheduler is advanced steps_per_epoch times only after each training epoch; learning rate is therefore constant inside an epoch",
+        "warmup_fraction": 0.05
+      },
+      "seed": 0,
+      "sha256": "92657fe4c1b6c1ee1e3e0b0f3b31d1ca92980cb1c63cbe08c7c010c9cfd468db",
+      "size_bytes": 6943627,
+      "steps_per_epoch": 1953,
+      "stock_stats_sha256": "0938cfda578710436220d0a31fd5d6101c496dafa1512784a4dddef3a44f7900",
+      "train_args": {
+        "batch_size": 256,
+        "epochs": 20,
+        "eta_min_frac": 0.01,
+        "grad_clip": 1.0,
+        "lr": 0.0003,
+        "max_train_samples": 500000,
+        "max_val_samples": 50000,
+        "num_workers": 4,
+        "seed": 0,
+        "split_seed": 0,
+        "val_frac": 0.1,
+        "vol_clip": 5.0,
+        "weight_decay": 0.0001
+      },
+      "train_rows_sampled": 500000,
+      "validation_rows": 50000
+    },
+    {
+      "arm": "supervised",
+      "canonical_epoch20_validation_metric": 0.5851188095474243,
+      "effective_optimizer_updates": 39060,
+      "effective_rows_per_epoch_drop_last": 499968,
+      "encoder_parameters": 535680,
+      "epoch": 20,
+      "format_version": "supervised_grid_v1",
+      "history_best_epoch": 20,
+      "history_best_validation_metric": 0.5851188095474243,
+      "history_path": "checkpoints/multiseed/supervised/seed1/history.json",
+      "history_sha256": "68bd190b07014e98923bd89368e5538d8477e7e25aac802b6b0a952fec356c2a",
+      "id": "supervised_seed1_ep020",
+      "objective": {
+        "loss": "mean-squared error",
+        "name": "standardized 22-target supervised regression",
+        "target_count": 22,
+        "target_names": [
+          "d_spread_z@1",
+          "d_spread_z@5",
+          "d_spread_z@10",
+          "d_spread_z@20",
+          "d_microprice_rel@1",
+          "d_microprice_rel@5",
+          "d_microprice_rel@10",
+          "d_microprice_rel@20",
+          "d_best_bid_rel@1",
+          "d_best_bid_rel@5",
+          "d_best_bid_rel@10",
+          "d_best_bid_rel@20",
+          "d_best_ask_rel@1",
+          "d_best_ask_rel@5",
+          "d_best_ask_rel@10",
+          "d_best_ask_rel@20",
+          "d_top_imbalance@1",
+          "d_top_imbalance@5",
+          "d_top_imbalance@10",
+          "d_top_imbalance@20",
+          "realized_vol@5",
+          "realized_vol@20"
+        ],
+        "target_standardization": "per target, training-row mean and std",
+        "timing_directly_supervised": false
+      },
+      "objective_head_parameters": 36246,
+      "optimizer": {
+        "algorithm": "AdamW",
+        "amsgrad": false,
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "eps": 1e-08,
+        "initial_lr": 0.0003,
+        "lr_at_checkpoint": 2.9999999999999997e-06,
+        "weight_decay": 0.0001
+      },
+      "path": "checkpoints/multiseed/supervised/seed1/epoch_020.pt",
+      "schedule": {
+        "family": "linear warm-up plus cosine decay",
+        "implementation_cadence": "the scheduler is advanced steps_per_epoch times only after each training epoch; learning rate is therefore constant inside an epoch",
+        "warmup_fraction": 0.05
+      },
+      "seed": 1,
+      "sha256": "1ec5fa7df081e6c4c392a19c13a21bd24895507d13998efb68680aaa8424f8ff",
+      "size_bytes": 6943627,
+      "steps_per_epoch": 1953,
+      "stock_stats_sha256": "0938cfda578710436220d0a31fd5d6101c496dafa1512784a4dddef3a44f7900",
+      "train_args": {
+        "batch_size": 256,
+        "epochs": 20,
+        "eta_min_frac": 0.01,
+        "grad_clip": 1.0,
+        "lr": 0.0003,
+        "max_train_samples": 500000,
+        "max_val_samples": 50000,
+        "num_workers": 4,
+        "seed": 1,
+        "split_seed": 0,
+        "val_frac": 0.1,
+        "vol_clip": 5.0,
+        "weight_decay": 0.0001
+      },
+      "train_rows_sampled": 500000,
+      "validation_rows": 50000
+    },
+    {
+      "arm": "supervised",
+      "canonical_epoch20_validation_metric": 0.5772621067047119,
+      "effective_optimizer_updates": 39060,
+      "effective_rows_per_epoch_drop_last": 499968,
+      "encoder_parameters": 535680,
+      "epoch": 20,
+      "format_version": "supervised_grid_v1",
+      "history_best_epoch": 19,
+      "history_best_validation_metric": 0.5770022566604615,
+      "history_path": "checkpoints/multiseed/supervised/seed2/history.json",
+      "history_sha256": "fa6158f33973c51a86de4cb10cbea04742421607aa4b60cf5f88b9e0d5ab68df",
+      "id": "supervised_seed2_ep020",
+      "objective": {
+        "loss": "mean-squared error",
+        "name": "standardized 22-target supervised regression",
+        "target_count": 22,
+        "target_names": [
+          "d_spread_z@1",
+          "d_spread_z@5",
+          "d_spread_z@10",
+          "d_spread_z@20",
+          "d_microprice_rel@1",
+          "d_microprice_rel@5",
+          "d_microprice_rel@10",
+          "d_microprice_rel@20",
+          "d_best_bid_rel@1",
+          "d_best_bid_rel@5",
+          "d_best_bid_rel@10",
+          "d_best_bid_rel@20",
+          "d_best_ask_rel@1",
+          "d_best_ask_rel@5",
+          "d_best_ask_rel@10",
+          "d_best_ask_rel@20",
+          "d_top_imbalance@1",
+          "d_top_imbalance@5",
+          "d_top_imbalance@10",
+          "d_top_imbalance@20",
+          "realized_vol@5",
+          "realized_vol@20"
+        ],
+        "target_standardization": "per target, training-row mean and std",
+        "timing_directly_supervised": false
+      },
+      "objective_head_parameters": 36246,
+      "optimizer": {
+        "algorithm": "AdamW",
+        "amsgrad": false,
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "eps": 1e-08,
+        "initial_lr": 0.0003,
+        "lr_at_checkpoint": 2.9999999999999997e-06,
+        "weight_decay": 0.0001
+      },
+      "path": "checkpoints/multiseed/supervised/seed2/epoch_020.pt",
+      "schedule": {
+        "family": "linear warm-up plus cosine decay",
+        "implementation_cadence": "the scheduler is advanced steps_per_epoch times only after each training epoch; learning rate is therefore constant inside an epoch",
+        "warmup_fraction": 0.05
+      },
+      "seed": 2,
+      "sha256": "29ff331f3f531cdbba9c14a223b577014f03a97efe42fada9eec03737b68d7ed",
+      "size_bytes": 6943627,
+      "steps_per_epoch": 1953,
+      "stock_stats_sha256": "0938cfda578710436220d0a31fd5d6101c496dafa1512784a4dddef3a44f7900",
+      "train_args": {
+        "batch_size": 256,
+        "epochs": 20,
+        "eta_min_frac": 0.01,
+        "grad_clip": 1.0,
+        "lr": 0.0003,
+        "max_train_samples": 500000,
+        "max_val_samples": 50000,
+        "num_workers": 4,
+        "seed": 2,
+        "split_seed": 0,
+        "val_frac": 0.1,
+        "vol_clip": 5.0,
+        "weight_decay": 0.0001
+      },
+      "train_rows_sampled": 500000,
+      "validation_rows": 50000
+    }
+  ],
+  "failures": [],
+  "historical_row_identity": {
+    "checkpoint_provenance_limit": "Row hashes were not embedded in the historical checkpoints. These identities are a deterministic reconstruction from the canonical dataset and archived sampling implementations.",
+    "dataset_path": "data/lobench_processed.npz",
+    "dataset_sha256": "7617dbbfcee56377f980a606267397861f6613017f0a2aca1e218407726ef862",
+    "grouped_train_candidates": 6596688,
+    "grouped_validation_candidates": 726822,
+    "same_seed_train_rows_matched_across_arms": {
+      "0": true,
+      "1": true,
+      "2": true
+    },
+    "same_seed_validation_rows_matched_across_arms": {
+      "0": false,
+      "1": false,
+      "2": false
+    },
+    "selection_records": [
+      {
+        "arm": "jepa_horizon",
+        "raw_endpoint_sha256": "d798cad51a3a3c5674139a9aaaeb71d5fdf7a00764358a5049c931c6334d483c",
+        "rows": 500000,
+        "seed": 0,
+        "split": "train"
+      },
+      {
+        "arm": "jepa_horizon",
+        "raw_endpoint_sha256": "1bccedd0e818e98e375d0343f343083032bf3831336234ac2842f7c239939e51",
+        "rows": 50000,
+        "seed": 0,
+        "split": "validation"
+      },
+      {
+        "arm": "jepa_horizon",
+        "raw_endpoint_sha256": "210979ebe46d9d531cec7bee796e6def5fdd9683185e1105d791daac2f48cac8",
+        "rows": 500000,
+        "seed": 1,
+        "split": "train"
+      },
+      {
+        "arm": "jepa_horizon",
+        "raw_endpoint_sha256": "86162b8a08ab560079daa84ca2e44dac9f57bdd18a7c529983b12fe432e8b2ab",
+        "rows": 50000,
+        "seed": 1,
+        "split": "validation"
+      },
+      {
+        "arm": "jepa_horizon",
+        "raw_endpoint_sha256": "9b20cd47b4e65e01399285ccff37a700ebe4e093074cefa30f35239002c8ed4d",
+        "rows": 500000,
+        "seed": 2,
+        "split": "train"
+      },
+      {
+        "arm": "jepa_horizon",
+        "raw_endpoint_sha256": "0d60487d1c43ceb24d7085320c4d148d28a3cef7142ec3e9111a72a59e07edc8",
+        "rows": 50000,
+        "seed": 2,
+        "split": "validation"
+      },
+      {
+        "arm": "jepa_masked",
+        "raw_endpoint_sha256": "d798cad51a3a3c5674139a9aaaeb71d5fdf7a00764358a5049c931c6334d483c",
+        "rows": 500000,
+        "seed": 0,
+        "split": "train"
+      },
+      {
+        "arm": "jepa_masked",
+        "raw_endpoint_sha256": "1bccedd0e818e98e375d0343f343083032bf3831336234ac2842f7c239939e51",
+        "rows": 50000,
+        "seed": 0,
+        "split": "validation"
+      },
+      {
+        "arm": "jepa_masked",
+        "raw_endpoint_sha256": "210979ebe46d9d531cec7bee796e6def5fdd9683185e1105d791daac2f48cac8",
+        "rows": 500000,
+        "seed": 1,
+        "split": "train"
+      },
+      {
+        "arm": "jepa_masked",
+        "raw_endpoint_sha256": "86162b8a08ab560079daa84ca2e44dac9f57bdd18a7c529983b12fe432e8b2ab",
+        "rows": 50000,
+        "seed": 1,
+        "split": "validation"
+      },
+      {
+        "arm": "jepa_masked",
+        "raw_endpoint_sha256": "9b20cd47b4e65e01399285ccff37a700ebe4e093074cefa30f35239002c8ed4d",
+        "rows": 500000,
+        "seed": 2,
+        "split": "train"
+      },
+      {
+        "arm": "jepa_masked",
+        "raw_endpoint_sha256": "0d60487d1c43ceb24d7085320c4d148d28a3cef7142ec3e9111a72a59e07edc8",
+        "rows": 50000,
+        "seed": 2,
+        "split": "validation"
+      },
+      {
+        "arm": "supervised",
+        "raw_endpoint_sha256": "d798cad51a3a3c5674139a9aaaeb71d5fdf7a00764358a5049c931c6334d483c",
+        "rows": 500000,
+        "seed": 0,
+        "split": "train"
+      },
+      {
+        "arm": "supervised",
+        "raw_endpoint_sha256": "a46bc113d7027265d97cd8b3edaca89a490392cb357c300e26e770ed77f08fa1",
+        "rows": 50000,
+        "seed": 0,
+        "split": "validation"
+      },
+      {
+        "arm": "supervised",
+        "raw_endpoint_sha256": "210979ebe46d9d531cec7bee796e6def5fdd9683185e1105d791daac2f48cac8",
+        "rows": 500000,
+        "seed": 1,
+        "split": "train"
+      },
+      {
+        "arm": "supervised",
+        "raw_endpoint_sha256": "4b293cc8c908635e90858726f27df9d3190889928c7a1dd47398c413da4f3580",
+        "rows": 50000,
+        "seed": 1,
+        "split": "validation"
+      },
+      {
+        "arm": "supervised",
+        "raw_endpoint_sha256": "9b20cd47b4e65e01399285ccff37a700ebe4e093074cefa30f35239002c8ed4d",
+        "rows": 500000,
+        "seed": 2,
+        "split": "train"
+      },
+      {
+        "arm": "supervised",
+        "raw_endpoint_sha256": "24d9252cf8da3090d18db0de0ba7753ad110ce1a057cc2b33a86351200b589c8",
+        "rows": 50000,
+        "seed": 2,
+        "split": "validation"
+      }
+    ],
+    "train_overlap_between_encoder_seeds": [
+      {
+        "fraction_of_500000": 0.075648,
+        "intersection_rows": 37824,
+        "seed_pair": [
+          0,
+          1
+        ]
+      },
+      {
+        "fraction_of_500000": 0.076128,
+        "intersection_rows": 38064,
+        "seed_pair": [
+          0,
+          2
+        ]
+      },
+      {
+        "fraction_of_500000": 0.075174,
+        "intersection_rows": 37587,
+        "seed_pair": [
+          1,
+          2
+        ]
+      }
+    ],
+    "valid_endpoints": 7323510
+  },
+  "matched_and_confounded": {
+    "historical_confounds_or_limits": [
+      "encoder seeds change the capped training-row sample as well as initialization and minibatch order",
+      "supervised validation sampling reuses the train RNG, while JEPA validation uses seed+1",
+      "the supervised LR scheduler advances in a post-epoch batch-count loop, so LR is constant within each epoch",
+      "epoch 20 is the scientific checkpoint even where best validation occurred earlier",
+      "checkpoint payloads omit training-time Git/source and hardware/runtime fingerprints",
+      "supervised pretraining directly used the 20 future-feature and two volatility targets later probed; timing was not a direct target but is correlated with them"
+    ],
+    "matched": [
+      "encoder architecture and tokenization",
+      "candidate stock-day split and split_seed=0",
+      "500000-row training cap and 50000-row validation cap",
+      "20 epochs, batch size 256 and 39060 optimizer updates",
+      "AdamW learning rate, weight decay, gradient clipping and final LR fraction",
+      "same-seed historical training-row identities across all three arms"
+    ],
+    "objective_required_differences": [
+      "supervised MSE head versus JEPA predictor and EMA target",
+      "horizon prediction versus structured masking",
+      "objective-specific validation loss and compute per update"
+    ]
+  },
+  "schema_name": "thesis.experiment01.training_protocol_audit",
+  "schema_version": 1,
+  "shared_contract": {
+    "canonical_selection": "epoch 20 for every arm and seed",
+    "effective_optimizer_updates": 39060,
+    "effective_rows_per_epoch": 499968,
+    "encoder_config": {
+      "K": 20,
+      "L": 10,
+      "S": 4,
+      "d_latent": 32,
+      "d_model": 128,
+      "dropout": 0.1,
+      "n_stocks": 7,
+      "raw_per_token": 10,
+      "spatial_d_ffn": 256,
+      "spatial_n_heads": 4,
+      "spatial_n_layers": 2,
+      "stock_emb_init_scale": 0.02,
+      "temporal_causal": false,
+      "temporal_d_ffn": 256,
+      "temporal_n_heads": 4,
+      "temporal_n_layers": 2
+    },
+    "input_grid": "20 timesteps x 4 role tokens x 128 dimensions",
+    "seed_policy": "split_seed=0 is shared; encoder seed controls initialization, minibatch order and the capped historical row subsample",
+    "train_args": {
+      "batch_size": 256,
+      "epochs": 20,
+      "eta_min_frac": 0.01,
+      "grad_clip": 1.0,
+      "lr": 0.0003,
+      "max_train_samples": 500000,
+      "max_val_samples": 50000,
+      "split_seed": 0,
+      "val_frac": 0.1,
+      "vol_clip": 5.0,
+      "weight_decay": 0.0001
+    },
+    "train_drop_last": true
+  },
+  "source_audit": {
+    "evidentiary_limit": "The checkpoints do not embed a Git commit or source hash. These are hashes of the current archived implementation, which is consistent with the payload metadata but is not cryptographic proof of the exact training-time source tree.",
+    "files": {
+      "models/model_tokenizer_t.py": {
+        "sha256": "5469d47c5efbbf27326bf11a355aa73fb162fd8fde8202026c19c5c99589df0e",
+        "size_bytes": 24454
+      },
+      "training/train_jepa_horizon.py": {
+        "sha256": "d66ae10a7a6fc99073098715dee6ecbf221ec351a0fa66326221288069cebb05",
+        "size_bytes": 45793
+      },
+      "training/train_jepa_masked.py": {
+        "sha256": "a22f1077d2a50c34d97b7fd6036590d8338d99b15f8bb18c4c947b4a2b488098",
+        "size_bytes": 46663
+      },
+      "training/train_supervised_grid.py": {
+        "sha256": "fd5b159b26aee324d7a0de1de6b86f5a2b77846052127a4a7db78eb2a340786f",
+        "size_bytes": 28268
+      },
+      "training/train_tokenizer_t.py": {
+        "sha256": "36123a315009eaf25f87d6ef19a3674c64585778ba99dd5f53bf171ec1143d6e",
+        "size_bytes": 37854
+      }
+    },
+    "observations": {
+      "encoder_seed_controls_train_row_subsample_all_arms": true,
+      "jepa_scheduler_is_epoch_level_cosine": true,
+      "jepa_validation_subsample_uses_seed_plus_one": true,
+      "supervised_scheduler_steps_after_epoch_in_batch_count_loop": true,
+      "supervised_validation_reuses_advanced_train_rng": true
+    },
+    "source_fingerprint": "768b18c6740749b0adbfd590c9bee3f723c66013bd755c8d0d08152a638f4f37"
+  },
+  "status": "passed",
+  "stock_stats_sha256": "0938cfda578710436220d0a31fd5d6101c496dafa1512784a4dddef3a44f7900"
+}
